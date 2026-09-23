@@ -1,0 +1,6 @@
+{
+  "name": "Echoward: Reino das Cinzas",
+  "description": "Jogo indie 2D metroidvania de ação e exploração atmosférica com combate preciso, reino subterrâneo interconectado e multiplayer cooperativo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
