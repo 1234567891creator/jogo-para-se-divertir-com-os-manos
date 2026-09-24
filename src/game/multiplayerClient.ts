@@ -6,41 +6,155 @@ import { RemotePlayer, PlayerState } from './types';
 
 export type MultiplayerEventCallback = (event: string, data: any) => void;
 
+export interface ActiveRoomInfo {
+  roomId: string;
+  playersCount: number;
+  isFull: boolean;
+}
+
 export class MultiplayerClient {
   private ws: WebSocket | null = null;
   public isConnected: boolean = false;
   public myClientId: string | null = null;
-  public currentRoomId: string | null = null;
+  public currentRoomId: string = 'LUMEN';
+  public currentName: string = 'Nox';
+  public currentColorIndex: number = 0;
   public remotePlayers: Map<string, RemotePlayer> = new Map();
   private listeners: Set<MultiplayerEventCallback> = new Set();
   private syncTimer: number | null = null;
+  private isConnecting: boolean = false;
 
-  public connect(roomId: string, playerName: string, colorIndex: number = 0) {
-    if (this.ws) {
-      this.disconnect();
+  public async fetchActiveRooms(): Promise<ActiveRoomInfo[]> {
+    try {
+      const res = await fetch('/api/rooms');
+      if (res.ok) {
+        const data = await res.json();
+        return data.rooms || [];
+      }
+    } catch (e) {
+      console.warn('Failed to fetch rooms from server:', e);
     }
+    return [
+      { roomId: 'LUMEN', playersCount: 1, isFull: false },
+      { roomId: 'CINZAS', playersCount: 0, isFull: false },
+      { roomId: 'NER', playersCount: 0, isFull: false },
+    ];
+  }
+
+  public async createRoom(preferredCode?: string): Promise<{ success: boolean; roomId: string; error?: string }> {
+    try {
+      const res = await fetch('/api/rooms/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferredCode, name: this.currentName }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.roomId) {
+          this.connect(data.roomId, this.currentName, this.currentColorIndex);
+          return { success: true, roomId: data.roomId };
+        }
+      }
+    } catch (e) {
+      console.warn('Create room HTTP call error, falling back to local WS connect:', e);
+    }
+
+    const fallbackCode = (preferredCode || 'SALA' + Math.floor(10 + Math.random() * 89)).toUpperCase();
+    this.connect(fallbackCode, this.currentName, this.currentColorIndex);
+    return { success: true, roomId: fallbackCode };
+  }
+
+  public async joinRoom(code: string, name?: string, colorIndex?: number): Promise<{ success: boolean; roomId: string; error?: string }> {
+    const cleanCode = (code || 'LUMEN').trim().toUpperCase();
+    if (name) this.currentName = name;
+    if (typeof colorIndex === 'number') this.currentColorIndex = colorIndex;
+
+    try {
+      const res = await fetch('/api/rooms/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: cleanCode }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return { success: false, roomId: cleanCode, error: err.error || 'Não foi possível entrar na sala.' };
+      }
+    } catch (e) {
+      console.warn('Join room check warning:', e);
+    }
+
+    this.connect(cleanCode, this.currentName, this.currentColorIndex);
+    return { success: true, roomId: cleanCode };
+  }
+
+  public setName(name: string) {
+    this.currentName = name;
+  }
+
+  public setColorIndex(index: number) {
+    this.currentColorIndex = index;
+  }
+
+  public connect(roomId: string, playerName: string = 'Nox', colorIndex: number = 0) {
+    const targetRoom = (roomId || 'LUMEN').trim().toUpperCase();
+    this.currentRoomId = targetRoom;
+    this.currentName = playerName;
+    this.currentColorIndex = colorIndex;
+
+    // If socket is already open, simply send a join message for the target room
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.isConnected = true;
+      this.isConnecting = false;
+      this.ws.send(
+        JSON.stringify({
+          type: 'join',
+          roomId: targetRoom,
+          name: this.currentName,
+          colorIndex: this.currentColorIndex,
+        })
+      );
+      this.emit('connected', { roomId: targetRoom });
+      return;
+    }
+
+    // If currently connecting, let onopen send the join message with updated room
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
+    if (this.ws) {
+      try {
+        this.ws.close();
+      } catch (e) {}
+      this.ws = null;
+    }
+
+    this.isConnecting = true;
 
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-      this.ws = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl);
+      this.ws = socket;
 
-      this.ws.onopen = () => {
+      socket.onopen = () => {
+        if (this.ws !== socket) return;
         this.isConnected = true;
-        this.currentRoomId = roomId.toUpperCase();
-        this.ws?.send(
+        this.isConnecting = false;
+
+        socket.send(
           JSON.stringify({
             type: 'join',
             roomId: this.currentRoomId,
-            name: playerName,
-            colorIndex,
+            name: this.currentName,
+            colorIndex: this.currentColorIndex,
           })
         );
         this.emit('connected', { roomId: this.currentRoomId });
       };
 
-      this.ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
           this.handleServerMessage(msg);
@@ -49,17 +163,21 @@ export class MultiplayerClient {
         }
       };
 
-      this.ws.onclose = () => {
-        this.isConnected = false;
-        this.remotePlayers.clear();
-        this.emit('disconnected', {});
+      socket.onclose = () => {
+        if (this.ws === socket) {
+          this.isConnected = false;
+          this.isConnecting = false;
+          this.remotePlayers.clear();
+          this.emit('disconnected', {});
+        }
       };
 
-      this.ws.onerror = (err) => {
-        console.warn('WebSocket error, running in local solo mode:', err);
+      socket.onerror = (err) => {
+        console.warn('WebSocket connection note:', err);
       };
     } catch (e) {
       console.warn('Failed to start WebSocket, solo mode active:', e);
+      this.isConnecting = false;
     }
   }
 
@@ -69,11 +187,15 @@ export class MultiplayerClient {
       this.syncTimer = null;
     }
     if (this.ws) {
-      this.ws.close();
+      try {
+        this.ws.close();
+      } catch (e) {}
       this.ws = null;
     }
     this.isConnected = false;
+    this.isConnecting = false;
     this.remotePlayers.clear();
+    this.emit('disconnected', {});
   }
 
   public on(cb: MultiplayerEventCallback) {
@@ -145,6 +267,34 @@ export class MultiplayerClient {
     if (msg.type === 'joined_room') {
       this.myClientId = msg.id;
       this.currentRoomId = msg.roomId;
+      this.remotePlayers.clear();
+
+      // Seed existing players in this room!
+      if (Array.isArray(msg.existingPlayers)) {
+        for (const ep of msg.existingPlayers) {
+          if (ep.id !== this.myClientId) {
+            this.remotePlayers.set(ep.id, {
+              id: ep.id,
+              name: ep.name,
+              x: 200,
+              y: 500,
+              vx: 0,
+              vy: 0,
+              facing: 'right',
+              hp: 5,
+              maxHp: 5,
+              isAttacking: false,
+              attackDirection: 'side',
+              isDashing: false,
+              isDowned: false,
+              colorIndex: ep.colorIndex ?? 1,
+              currentRoomId: 'room_lumen_haven',
+              maskCracks: 0,
+            });
+          }
+        }
+      }
+
       this.emit('room_joined', msg);
     } else if (msg.type === 'player_joined') {
       this.remotePlayers.set(msg.id, {

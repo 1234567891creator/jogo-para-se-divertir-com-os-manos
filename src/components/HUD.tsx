@@ -1,7 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { PlayerState, GameRoom, ActiveEnemy, RemotePlayer } from '../game/types';
 import { REGIONS } from '../game/regionsData';
-import { Compass, BookOpen, Users, Volume2, VolumeX, Sun, Image as ImageIcon, Clock } from 'lucide-react';
+import {
+  Compass,
+  BookOpen,
+  Users,
+  Volume2,
+  VolumeX,
+  Sun,
+  Image as ImageIcon,
+  Clock,
+  ShieldAlert,
+  Sliders,
+  Smartphone,
+} from 'lucide-react';
 import { spriteStore } from '../game/spriteStore';
 
 interface HUDProps {
@@ -9,10 +21,16 @@ interface HUDProps {
   currentRoom: GameRoom;
   activeBoss: ActiveEnemy | null;
   remotePlayers: RemotePlayer[];
+  isAdminUnlocked: boolean;
   onOpenMap: () => void;
   onOpenLore: () => void;
   onOpenMultiplayer: () => void;
   onOpenSpriteManager: () => void;
+  onOpenAdmin: () => void;
+  onOpenSounds: () => void;
+  onOpenCodeInput: () => void;
+  onToggleMobileControls: () => void;
+  isMobileControlsVisible: boolean;
   isMuted: boolean;
   onToggleMute: () => void;
   onSendQuickEmote: (text: string) => void;
@@ -26,10 +44,16 @@ export const HUD: React.FC<HUDProps> = ({
   currentRoom,
   activeBoss,
   remotePlayers,
+  isAdminUnlocked,
   onOpenMap,
   onOpenLore,
   onOpenMultiplayer,
   onOpenSpriteManager,
+  onOpenAdmin,
+  onOpenSounds,
+  onOpenCodeInput,
+  onToggleMobileControls,
+  isMobileControlsVisible,
   isMuted,
   onToggleMute,
   onSendQuickEmote,
@@ -124,7 +148,52 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
 
         {/* Right: Controls, Lantern Toggle, Sprites Uploader & Co-op */}
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-auto flex items-center gap-2 flex-wrap justify-end">
+          {/* Admin Panel 847717 Button - ONLY VISIBLE ONCE UNLOCKED VIA TYPING 847717 */}
+          {isAdminUnlocked && (
+            <button
+              onClick={onOpenAdmin}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-500/80 bg-amber-950/85 px-3 py-1.5 text-xs font-bold text-amber-200 backdrop-blur-md transition-all hover:bg-amber-900 hover:border-amber-400 hover:text-white shadow-md shadow-amber-950/40 animate-pulse"
+              title="Painel de Administrador (Desbloqueado com código 847717)"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 text-amber-400" />
+              <span className="font-mono">847717 ADM</span>
+            </button>
+          )}
+
+          {/* Discreet Code Input Icon (for devices or players to type secret codes) */}
+          <button
+            onClick={onOpenCodeInput}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/60 text-slate-400 backdrop-blur-md transition-colors hover:border-amber-500/50 hover:text-amber-300"
+            title="Inserir Código Secreto"
+          >
+            <span className="font-mono text-xs">#</span>
+          </button>
+
+          {/* Sound Studio Modal Button */}
+          <button
+            onClick={onOpenSounds}
+            className="flex items-center gap-1.5 rounded-lg border border-violet-700/80 bg-violet-950/85 px-3 py-1.5 text-xs font-medium text-violet-200 backdrop-blur-md transition-colors hover:border-violet-400 hover:text-white shadow-md shadow-violet-950/40"
+            title="Estúdio de Sons, Volumes e Trilha Sonora"
+          >
+            <Sliders className="h-3.5 w-3.5 text-violet-400" />
+            <span className="hidden sm:inline">Sons</span>
+          </button>
+
+          {/* Mobile Controls Toggle */}
+          <button
+            onClick={onToggleMobileControls}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium backdrop-blur-md transition-colors ${
+              isMobileControlsVisible
+                ? 'border-cyan-400 bg-cyan-950/90 text-cyan-200 shadow-md shadow-cyan-900/30'
+                : 'border-slate-700/80 bg-slate-900/85 text-slate-300 hover:border-slate-500 hover:text-white'
+            }`}
+            title="Alternar botões de toque para celular na tela"
+          >
+            <Smartphone className="h-3.5 w-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Celular</span>
+          </button>
+
           {/* Lantern Light Level Toggle */}
           <button
             onClick={onCycleLantern}
@@ -148,7 +217,7 @@ export const HUD: React.FC<HUDProps> = ({
             title="Importar imagens PNG de animações sem fundo"
           >
             <ImageIcon className="h-3.5 w-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">Sprites Nox</span>
+            <span className="hidden sm:inline">Sprites & NPCs</span>
           </button>
 
           {/* Quick Animation Speed Toggle */}

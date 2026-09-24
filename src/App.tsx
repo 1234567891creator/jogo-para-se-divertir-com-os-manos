@@ -2,18 +2,22 @@
  * Echoward: Reino das Cinzas - Main Application
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PlayerState, GameRoom, ActiveEnemy, NPC, LoreTablet, RemotePlayer } from './game/types';
 import { GAME_ROOMS } from './game/worldMap';
-import { GameCanvas } from './components/GameCanvas';
+import { GameCanvas, setMobileInput, AdminCanvasAction } from './components/GameCanvas';
 import { HUD } from './components/HUD';
 import { TitleScreen } from './components/TitleScreen';
 import { WorldMapModal } from './components/WorldMapModal';
 import { LoreModal } from './components/LoreModal';
 import { MultiplayerModal } from './components/MultiplayerModal';
 import { SpriteManagerModal } from './components/SpriteManagerModal';
+import { AdminPanelModal } from './components/AdminPanelModal';
+import { SoundStudioModal } from './components/SoundStudioModal';
+import { MobileControls } from './components/MobileControls';
 import { DialogueBox } from './components/DialogueBox';
 import { ControlsGuide } from './components/ControlsGuide';
+import { SecretCodeModal } from './components/SecretCodeModal';
 import { multiplayerClient } from './game/multiplayerClient';
 import { soundEngine } from './game/audio';
 import { Sparkles, HelpCircle } from 'lucide-react';
@@ -78,15 +82,51 @@ export default function App() {
   const [discoveredTablets, setDiscoveredTablets] = useState<LoreTablet[]>([]);
   const [activeBoss, setActiveBoss] = useState<ActiveEnemy | null>(null);
 
+  // Device detection: detect touchscreen or mobile screen
+  const [isMobileDevice] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      'ontouchstart' in window ||
+      navigator.maxTouchPoints > 0 ||
+      window.innerWidth <= 768 ||
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    );
+  });
+
   // Modals & UI States
   const [showMap, setShowMap] = useState(false);
   const [showLore, setShowLore] = useState(false);
   const [showMultiplayer, setShowMultiplayer] = useState(false);
   const [showSpriteManager, setShowSpriteManager] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showSoundModal, setShowSoundModal] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [showMobileControls, setShowMobileControls] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      'ontouchstart' in window ||
+      navigator.maxTouchPoints > 0 ||
+      window.innerWidth <= 768 ||
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    );
+  });
+  const [showCodeInputModal, setShowCodeInputModal] = useState(false);
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('echoward_admin_unlocked') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [activeNPC, setActiveNPC] = useState<NPC | null>(null);
   const [abilityToast, setAbilityToast] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+
+  // Admin canvas actions trigger
+  const [adminAction, setAdminAction] = useState<AdminCanvasAction | null>(null);
+
+  // Secret code 847717 buffer
+  const codeBufferRef = useRef<string>('');
 
   // Multiplayer Room State
   const [roomCode, setRoomCode] = useState('LUMEN');
@@ -125,11 +165,32 @@ export default function App() {
     }
   }, [currentRoom.id, discoveredRooms]);
 
-  // Global hotkeys for modals
+  const unlockAdminCode = () => {
+    setIsAdminUnlocked(true);
+    try {
+      localStorage.setItem('echoward_admin_unlocked', 'true');
+    } catch {}
+    setShowAdminModal(true);
+    soundEngine.playSecretCodeSuccess();
+    setAbilityToast('✨ PAINEL ADM DESBLOQUEADO (CÓDIGO 847717)!');
+    setTimeout(() => setAbilityToast(null), 3500);
+  };
+
+  // Global hotkeys & Secret Code 847717 Detection
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (gameState !== 'PLAYING') return;
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+
+      // Track numeric keys for secret code 847717
+      if (e.key && /^[0-9]$/.test(e.key)) {
+        codeBufferRef.current = (codeBufferRef.current + e.key).slice(-10);
+        if (codeBufferRef.current.endsWith('847717')) {
+          codeBufferRef.current = '';
+          unlockAdminCode();
+          return;
+        }
+      }
 
       if (e.code === 'KeyM') {
         setShowMap((v) => !v);
@@ -146,8 +207,10 @@ export default function App() {
         setShowLore(false);
         setShowMultiplayer(false);
         setShowSpriteManager(false);
+        setShowAdminModal(false);
+        setShowSoundModal(false);
         setShowControls(false);
-        setActiveNPC(null);
+        setShowCodeInputModal(false);
       }
     };
 
@@ -200,76 +263,122 @@ export default function App() {
     }, 4500);
   };
 
-  const handleReadTablet = (tablet: LoreTablet) => {
-    if (!discoveredTablets.some((t) => t.id === tablet.id)) {
-      setDiscoveredTablets((prev) => [...prev, tablet]);
-    }
-    setShowLore(true);
+  const handleStartGame = () => {
+    setGameState('PLAYING');
+    soundEngine.playTotemRest();
+    soundEngine.startAmbientMusic(currentRoom.regionId);
   };
 
-  const handleJoinRoom = (newRoomCode: string) => {
-    setRoomCode(newRoomCode);
-    multiplayerClient.connect(newRoomCode, playerName, colorIndex);
+  const handleSendEmote = (text: string) => {
+    multiplayerClient.sendEmote(text);
   };
 
   const handleUpdatePlayer = (newName: string, newColor: number) => {
     setPlayerName(newName);
     setColorIndex(newColor);
-    multiplayerClient.connect(roomCode, newName, newColor);
+    multiplayerClient.setName(newName);
+    multiplayerClient.setColorIndex(newColor);
   };
 
-  const handleSendEmote = (emoteText: string) => {
-    multiplayerClient.sendEmote(emoteText);
+  const handleJoinRoom = (newCode: string) => {
+    setRoomCode(newCode);
+    multiplayerClient.connect(newCode, playerName, colorIndex);
+  };
+
+  // Admin Actions
+  const handleTeleportRoom = (room: GameRoom, targetX = 200, targetY = 520) => {
+    setCurrentRoom(room);
+    setPlayer((prev) => ({
+      ...prev,
+      x: targetX,
+      y: targetY,
+      vx: 0,
+      vy: 0,
+    }));
+    setAdminAction({
+      type: 'teleport',
+      payload: { x: targetX, y: targetY },
+      id: Date.now(),
+    });
+  };
+
+  const handleKillAllEnemies = () => {
+    setAdminAction({
+      type: 'kill_enemies',
+      id: Date.now(),
+    });
+    setActiveBoss(null);
+  };
+
+  const handleSpawnEnemy = (
+    type:
+      | 'crawler'
+      | 'specter'
+      | 'varron_sentinel'
+      | 'abyss_diver'
+      | 'boss_guardian'
+      | 'boss_varron_colossus'
+      | 'boss_shade'
+  ) => {
+    setAdminAction({
+      type: 'spawn_enemy',
+      payload: { type },
+      id: Date.now(),
+    });
   };
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-[#06080d] font-sans antialiased">
+    <main className="relative h-screen w-screen overflow-hidden bg-[#06080d] font-sans antialiased text-slate-100 select-none">
       {gameState === 'TITLE' ? (
         <TitleScreen
-          onStartGame={() => {
-            soundEngine.startAmbientMusic(currentRoom.regionId);
-            setGameState('PLAYING');
-          }}
-          onOpenMap={() => {
-            setShowMap(true);
-            setGameState('PLAYING');
-          }}
-          onOpenMultiplayer={() => {
-            setShowMultiplayer(true);
-            setGameState('PLAYING');
-          }}
-          onOpenLore={() => {
-            setShowLore(true);
-            setGameState('PLAYING');
-          }}
+          onStartGame={handleStartGame}
+          onOpenMultiplayer={() => setShowMultiplayer(true)}
+          onOpenLore={() => setShowLore(true)}
+          onOpenMap={() => setShowMap(true)}
         />
       ) : (
         <>
-          {/* Main 2D Canvas */}
+          {/* Main 60FPS Metroidvania Physics & WebGL/2D Canvas */}
           <GameCanvas
             initialPlayer={player}
-            onPlayerHUDUpdate={(updated) => setPlayer(updated)}
+            onPlayerHUDUpdate={setPlayer}
             currentRoom={currentRoom}
             setCurrentRoom={setCurrentRoom}
-            onInteractNPC={(npc) => setActiveNPC(npc)}
-            onReadTablet={handleReadTablet}
+            onInteractNPC={(npc) => {
+              setActiveNPC(npc);
+              setPlayer((p) => ({ ...p, isTalking: true }));
+              soundEngine.playNpcVoice();
+            }}
+            onReadTablet={(tab) => {
+              setShowLore(true);
+              if (!discoveredTablets.some((t) => t.id === tab.id)) {
+                setDiscoveredTablets((prev) => [...prev, tab]);
+              }
+            }}
             onDiscoverAbility={handleDiscoverAbility}
             activeBoss={activeBoss}
             setActiveBoss={setActiveBoss}
             remotePlayers={remotePlayers}
             lanternBrightness={lanternBrightness}
+            adminAction={adminAction}
           />
 
-          {/* Game HUD */}
+          {/* Top In-Game HUD: Masks, Pulse Vessel, Quick Actions */}
           <HUD
             player={player}
             currentRoom={currentRoom}
             activeBoss={activeBoss}
             remotePlayers={remotePlayers}
+            isAdminUnlocked={isAdminUnlocked}
             onOpenMap={() => setShowMap(true)}
             onOpenLore={() => setShowLore(true)}
             onOpenMultiplayer={() => setShowMultiplayer(true)}
             onOpenSpriteManager={() => setShowSpriteManager(true)}
+            onOpenAdmin={() => setShowAdminModal(true)}
+            onOpenSounds={() => setShowSoundModal(true)}
+            onOpenCodeInput={() => setShowCodeInputModal(true)}
+            onToggleMobileControls={() => setShowMobileControls((v) => !v)}
+            isMobileControlsVisible={showMobileControls}
             isMuted={isMuted}
             onToggleMute={handleToggleMute}
             onSendQuickEmote={handleSendEmote}
@@ -278,12 +387,25 @@ export default function App() {
             onToggleAbility={handleToggleAbility}
           />
 
+          {/* Mobile Touch Controls Overlay (Virtual D-Pad & Action Buttons) */}
+          <MobileControls
+            onInputStateChange={(key, pressed) => setMobileInput(key, pressed)}
+            isAdminUnlocked={isAdminUnlocked}
+            onOpenAdmin={() => setShowAdminModal(true)}
+            onOpenSoundTab={() => setShowSoundModal(true)}
+            onOpenSpriteTab={() => setShowSpriteManager(true)}
+            onOpenMap={() => setShowMap(true)}
+            onOpenCodeInput={() => setShowCodeInputModal(true)}
+            isVisible={showMobileControls}
+            onToggleVisible={() => setShowMobileControls((v) => !v)}
+          />
+
           {/* Ability Discovery Banner */}
           {abilityToast && (
             <div className="pointer-events-none fixed top-20 inset-x-0 z-50 flex justify-center">
               <div className="flex items-center gap-3 rounded-xl border border-amber-500/80 bg-slate-950/95 px-6 py-3.5 shadow-2xl shadow-amber-950/60 backdrop-blur-md animate-bounce">
                 <Sparkles className="h-5 w-5 text-amber-400" />
-                <span className="font-display text-sm font-bold tracking-wider text-amber-200">
+                <span className="font-serif text-sm font-bold tracking-wider text-amber-200">
                   {abilityToast}
                 </span>
               </div>
@@ -298,6 +420,34 @@ export default function App() {
           >
             <HelpCircle className="h-4 w-4" />
           </button>
+
+          {/* Secret Code Input Modal */}
+          <SecretCodeModal
+            isOpen={showCodeInputModal}
+            onClose={() => setShowCodeInputModal(false)}
+            onSuccess={unlockAdminCode}
+          />
+
+          {/* Admin Panel Modal (Triggered by 847717 or button) */}
+          <AdminPanelModal
+            isOpen={showAdminModal}
+            onClose={() => setShowAdminModal(false)}
+            player={player}
+            setPlayer={setPlayer}
+            currentRoom={currentRoom}
+            onTeleportRoom={handleTeleportRoom}
+            onOpenSprites={() => setShowSpriteManager(true)}
+            onOpenSounds={() => setShowSoundModal(true)}
+            onKillAllEnemies={handleKillAllEnemies}
+            onSpawnEnemy={handleSpawnEnemy}
+          />
+
+          {/* Sound & Music Studio Modal */}
+          <SoundStudioModal
+            isOpen={showSoundModal}
+            onClose={() => setShowSoundModal(false)}
+            currentRegion={currentRoom.regionId}
+          />
 
           {/* Sprite & Animation Manager Modal */}
           {showSpriteManager && (

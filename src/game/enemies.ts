@@ -133,6 +133,54 @@ export class EnemyManager {
           name: 'O Guardião do Silêncio',
         };
 
+      case 'boss_varron_colossus':
+        return {
+          id,
+          type,
+          x,
+          y,
+          vx: 0,
+          vy: 0,
+          width: 120,
+          height: 150,
+          hp: 450,
+          maxHp: 450,
+          facing: -1,
+          attackTimer: 2.0,
+          attackCooldown: 2.5,
+          state: 'idle',
+          originX: x,
+          patrolDist,
+          invulnerableTimer: 0,
+          phase: 1,
+          isBoss: true,
+          name: 'Colosso Forjado de Varron',
+        };
+
+      case 'boss_shade':
+        return {
+          id,
+          type,
+          x,
+          y,
+          vx: 0,
+          vy: 0,
+          width: 90,
+          height: 130,
+          hp: 550,
+          maxHp: 550,
+          facing: -1,
+          attackTimer: 1.2,
+          attackCooldown: 2.0,
+          state: 'idle',
+          originX: x,
+          patrolDist,
+          invulnerableTimer: 0,
+          phase: 1,
+          isBoss: true,
+          name: 'A Sombra de Ner · Arauto do Vazio',
+        };
+
       default:
         return {
           id,
@@ -274,6 +322,14 @@ export class EnemyManager {
         case 'boss_guardian':
           this.updateGuardianBoss(enemy, player, dt);
           break;
+
+        case 'boss_varron_colossus':
+          this.updateVarronBoss(enemy, player, dt);
+          break;
+
+        case 'boss_shade':
+          this.updateShadeBoss(enemy, player, dt);
+          break;
       }
 
       // Check contact damage with player
@@ -370,6 +426,153 @@ export class EnemyManager {
     boss.vy = Math.min(700, boss.vy + 800 * dt);
 
     // Stop at ground level (y ≈ 660)
+    if (boss.y > 660) {
+      boss.y = 660;
+      boss.vy = 0;
+      boss.vx *= 0.85;
+    }
+  }
+
+  // BOSS 2: Colosso Forjado de Varron
+  private updateVarronBoss(boss: ActiveEnemy, player: PlayerState, dt: number) {
+    if (boss.hp <= boss.maxHp * 0.45 && boss.phase === 1) {
+      boss.phase = 2;
+      boss.attackCooldown = 1.6;
+      soundEngine.playGroundPound();
+    }
+
+    boss.facing = player.x < boss.x ? -1 : 1;
+    boss.attackTimer -= dt;
+
+    if (boss.attackTimer <= 0) {
+      boss.attackTimer = boss.phase === 2 ? 1.6 : 2.4;
+      const roll = Math.random();
+
+      if (roll < 0.4) {
+        // Copper Steam Eruption (3 fiery arcing balls)
+        boss.state = 'attack';
+        soundEngine.playSpellCast();
+        [-180, 0, 180].forEach((vx) => {
+          this.projectiles.push({
+            id: 'steam_' + Math.random(),
+            x: boss.x + boss.width / 2,
+            y: boss.y + 20,
+            vx,
+            vy: -260,
+            radius: 14,
+            color: '#ea580c',
+            damage: 1,
+            fromPlayer: false,
+            lifetime: 2.5,
+          });
+        });
+      } else if (roll < 0.75) {
+        // Charging Steam Ram
+        boss.vx = boss.facing * (boss.phase === 2 ? 340 : 250);
+        boss.vy = -180;
+        soundEngine.playDash();
+      } else {
+        // Molten Hammer Seismic Quake
+        soundEngine.playGroundPound();
+        [-280, 280].forEach((vx) => {
+          this.projectiles.push({
+            id: 'magma_' + Math.random(),
+            x: boss.x + boss.width / 2,
+            y: boss.y + boss.height - 20,
+            vx,
+            vy: 0,
+            radius: 15,
+            color: '#f97316',
+            damage: 1,
+            fromPlayer: false,
+            lifetime: 2.2,
+          });
+        });
+      }
+    }
+
+    boss.x += boss.vx * dt;
+    boss.y += boss.vy * dt;
+    boss.vy = Math.min(800, boss.vy + 900 * dt);
+
+    if (boss.y > 650) {
+      boss.y = 650;
+      boss.vy = 0;
+      boss.vx *= 0.8;
+    }
+  }
+
+  // BOSS 3: A Sombra de Ner · Arauto do Vazio
+  private updateShadeBoss(boss: ActiveEnemy, player: PlayerState, dt: number) {
+    if (boss.hp <= boss.maxHp * 0.5 && boss.phase === 1) {
+      boss.phase = 2;
+      boss.attackCooldown = 1.3;
+      soundEngine.playNpcVoice();
+    }
+
+    boss.facing = player.x < boss.x ? -1 : 1;
+    boss.attackTimer -= dt;
+
+    if (boss.attackTimer <= 0) {
+      boss.attackTimer = boss.phase === 2 ? 1.4 : 2.1;
+      const roll = Math.random();
+
+      if (roll < 0.35) {
+        // Shadow Teleport behind player!
+        const offset = player.facing === 'right' ? -130 : 130;
+        boss.x = Math.max(100, Math.min(1600, player.x + offset));
+        boss.y = player.y - 40;
+        boss.vx = 0;
+        boss.vy = 0;
+        soundEngine.playDash();
+
+        // Release shadow burst
+        for (let i = 0; i < 4; i++) {
+          const ang = (i * Math.PI) / 2;
+          this.projectiles.push({
+            id: 'void_' + Math.random(),
+            x: boss.x + boss.width / 2,
+            y: boss.y + boss.height / 2,
+            vx: Math.cos(ang) * 190,
+            vy: Math.sin(ang) * 190,
+            radius: 10,
+            color: '#a855f7',
+            damage: 1,
+            fromPlayer: false,
+            lifetime: 2.5,
+          });
+        }
+      } else if (roll < 0.7) {
+        // Homing Void Darts
+        soundEngine.playSpellCast();
+        const count = boss.phase === 2 ? 5 : 3;
+        for (let i = 0; i < count; i++) {
+          const ang = Math.atan2(player.y - boss.y, player.x - boss.x) + (i - 1) * 0.35;
+          this.projectiles.push({
+            id: 'dart_' + Math.random(),
+            x: boss.x + boss.width / 2,
+            y: boss.y + 40,
+            vx: Math.cos(ang) * 220,
+            vy: Math.sin(ang) * 220,
+            radius: 9,
+            color: '#c084fc',
+            damage: 1,
+            fromPlayer: false,
+            lifetime: 3.2,
+          });
+        }
+      } else {
+        // Void Dive Slam
+        boss.vx = (player.x - boss.x) * 1.5;
+        boss.vy = -380;
+        soundEngine.playGroundPound();
+      }
+    }
+
+    boss.x += boss.vx * dt;
+    boss.y += boss.vy * dt;
+    boss.vy = Math.min(750, boss.vy + 700 * dt);
+
     if (boss.y > 660) {
       boss.y = 660;
       boss.vy = 0;

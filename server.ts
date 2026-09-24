@@ -13,12 +13,7 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
-// API health endpoint
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', game: 'Echoward: Reino das Cinzas', timestamp: Date.now() });
-});
-
-// Realtime Multiplayer WebSocket Server
+// Realtime Multiplayer Data structures
 interface ConnectedClient {
   ws: WebSocket;
   id: string;
@@ -30,18 +25,115 @@ interface ConnectedClient {
 const clients = new Map<WebSocket, ConnectedClient>();
 const rooms = new Map<string, Set<WebSocket>>();
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+// Pre-populate standard public rooms so players always see rooms to join
+const publicRoomCodes = new Set(['LUMEN', 'CINZAS', 'NER', 'ECOS']);
+for (const code of publicRoomCodes) {
+  if (!rooms.has(code)) {
+    rooms.set(code, new Set());
+  }
+}
+
+// API Endpoints for Rooms & Multiplayer Status
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', game: 'Echoward: Reino das Cinzas', timestamp: Date.now() });
+});
+
+// List all active rooms
+app.get('/api/rooms', (_req, res) => {
+  const roomList = Array.from(rooms.entries()).map(([code, clientSet]) => {
+    const activeClients: Array<{ id: string; name: string; colorIndex: number }> = [];
+    for (const ws of clientSet) {
+      const c = clients.get(ws);
+      if (c) {
+        activeClients.push({ id: c.id, name: c.name, colorIndex: c.colorIndex });
+      }
+    }
+    return {
+      roomId: code,
+      playersCount: clientSet.size,
+      players: activeClients,
+      isFull: clientSet.size >= 4,
+    };
+  });
+
+  res.json({ rooms: roomList });
+});
+
+// Create room endpoint
+app.post('/api/rooms/create', (req, res) => {
+  let { preferredCode, name } = req.body || {};
+  let roomId = (preferredCode || '').trim().toUpperCase();
+
+  if (!roomId || roomId.length < 3) {
+    // Generate random code like SOL7, LUM9, NOX3
+    const prefixes = ['LUM', 'NOX', 'ASH', 'NER', 'SOL', 'ECO', 'SIL'];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const num = Math.floor(10 + Math.random() * 90);
+    roomId = `${prefix}${num}`;
+  }
+
+  roomId = roomId.substring(0, 10).replace(/[^A-Z0-9_-]/g, '');
+
+  if (!rooms.has(roomId)) {
+    rooms.set(roomId, new Set());
+  }
+
+  res.json({
+    success: true,
+    roomId,
+    message: `Sala ${roomId} criada com sucesso!`,
+    playersCount: rooms.get(roomId)!.size,
+  });
+});
+
+// Join room endpoint (validation)
+app.post('/api/rooms/join', (req, res) => {
+  const { roomId } = req.body || {};
+  const cleanId = (roomId || '').trim().toUpperCase();
+
+  if (!cleanId) {
+    return res.status(400).json({ success: false, error: 'Código da sala inválido.' });
+  }
+
+  if (!rooms.has(cleanId)) {
+    // Automatically create if not exists so joining any typed code works!
+    rooms.set(cleanId, new Set());
+  }
+
+  const room = rooms.get(cleanId)!;
+  if (room.size >= 4) {
+    return res.status(400).json({ success: false, error: 'Esta sala já atingiu a capacidade máxima (4 jogadores).' });
+  }
+
+  res.json({
+    success: true,
+    roomId: cleanId,
+    playersCount: room.size,
+  });
+});
+
+// Realtime Multiplayer WebSocket Server
+const wss = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (request, socket, head) => {
+  const { pathname } = new URL(request.url || '', `http://${request.headers.host}`);
+  if (pathname === '/ws') {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  }
+});
 
 wss.on('connection', (ws: WebSocket) => {
-  let clientId = 'wanderer_' + Math.random().toString(36).substring(2, 8);
+  const clientId = 'wanderer_' + Math.random().toString(36).substring(2, 8);
 
   ws.on('message', (messageData: string) => {
     try {
       const data = JSON.parse(messageData.toString());
 
       if (data.type === 'join') {
-        const roomId = (data.roomId || 'reino_lumen').trim().toUpperCase();
-        const playerName = (data.name || 'Viajante').substring(0, 16);
+        const roomId = (data.roomId || 'LUMEN').trim().toUpperCase();
+        const playerName = (data.name || 'Nox').substring(0, 16);
         const colorIndex = typeof data.colorIndex === 'number' ? data.colorIndex : 0;
 
         // Leave existing room if any
@@ -50,7 +142,7 @@ wss.on('connection', (ws: WebSocket) => {
           rooms.get(existing.roomId)!.delete(ws);
           broadcastToRoom(existing.roomId, {
             type: 'player_leave',
-            id: existing.id
+            id: existing.id,
           }, ws);
         }
 
@@ -59,7 +151,7 @@ wss.on('connection', (ws: WebSocket) => {
           id: clientId,
           name: playerName,
           roomId,
-          colorIndex
+          colorIndex,
         };
         clients.set(ws, clientInfo);
 
@@ -68,12 +160,24 @@ wss.on('connection', (ws: WebSocket) => {
         }
         rooms.get(roomId)!.add(ws);
 
-        // Send confirmation to the joining player
+        // Collect existing players in the room to send to this newcomer!
+        const existingPlayers: Array<{ id: string; name: string; colorIndex: number }> = [];
+        for (const otherWs of rooms.get(roomId)!) {
+          if (otherWs !== ws) {
+            const oc = clients.get(otherWs);
+            if (oc) {
+              existingPlayers.push({ id: oc.id, name: oc.name, colorIndex: oc.colorIndex });
+            }
+          }
+        }
+
+        // Send confirmation & existing players to the joining player
         ws.send(JSON.stringify({
           type: 'joined_room',
           id: clientId,
           roomId,
-          playersCount: rooms.get(roomId)!.size
+          playersCount: rooms.get(roomId)!.size,
+          existingPlayers,
         }));
 
         // Notify others in the room
@@ -81,7 +185,7 @@ wss.on('connection', (ws: WebSocket) => {
           type: 'player_joined',
           id: clientId,
           name: playerName,
-          colorIndex
+          colorIndex,
         }, ws);
 
       } else if (data.type === 'sync' || data.type === 'action' || data.type === 'boss_sync' || data.type === 'emote') {
@@ -104,12 +208,13 @@ wss.on('connection', (ws: WebSocket) => {
       const room = rooms.get(client.roomId);
       if (room) {
         room.delete(ws);
-        if (room.size === 0) {
+        // Don't delete standard public rooms
+        if (room.size === 0 && !publicRoomCodes.has(client.roomId)) {
           rooms.delete(client.roomId);
         } else {
           broadcastToRoom(client.roomId, {
             type: 'player_leave',
-            id: client.id
+            id: client.id,
           });
         }
       }

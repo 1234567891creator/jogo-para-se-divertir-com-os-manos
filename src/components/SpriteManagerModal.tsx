@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { spriteStore, AnimationStateName, CustomFrame } from '../game/spriteStore';
+import {
+  spriteStore,
+  AnimationStateName,
+  CustomFrame,
+  ANIMATION_CATEGORIES,
+  CategoryGroup,
+} from '../game/spriteStore';
 import {
   X,
   Upload,
@@ -11,64 +17,37 @@ import {
   FileDown,
   FileUp,
   Sparkles,
-  Sword,
-  DoorOpen,
-  HandMetal,
-  MessageSquare,
   Sliders,
   Clock,
   Search,
+  Code,
+  Copy,
+  Users,
+  Skull,
+  User,
+  Layers,
 } from 'lucide-react';
 
 interface SpriteManagerModalProps {
   onClose: () => void;
 }
 
-const ANIMATION_CATEGORIES: Array<{
-  key: AnimationStateName;
-  label: string;
-  desc: string;
-  icon?: string;
-}> = [
-  { key: 'idle', label: 'Idle (Parado)', desc: 'Respiração e ondulação suave da capa' },
-  { key: 'correr', label: 'Correr (Movimentação)', desc: 'Animação de corrida para toda locomoção no chão' },
-  { key: 'pulo_inicio', label: 'Pulo (Ao Apertar / Impulso)', desc: 'Momento exato em que aperta o botão saindo do chão' },
-  { key: 'pulo_ar', label: 'Pulo no Ar (Subida)', desc: 'Ascendendo pelo ar após o impulso inicial' },
-  { key: 'queda_ar', label: 'Queda no Ar (Descida)', desc: 'Caindo pelo ar com a capa flutuando para cima' },
-  { key: 'aterrissagem', label: 'Aterrissagem (Ao Tocar o Chão)', desc: 'Impacto no solo e agachamento com poeira' },
-  { key: 'pular', label: 'Pulo Geral (Fallback)', desc: 'Usado caso não defina início ou subida separadamente' },
-  { key: 'queda', label: 'Queda Geral (Fallback)', desc: 'Usado caso não defina queda no ar' },
-  { key: 'dash', label: 'Dash (Passo Fantasma)', desc: 'Torpedo horizontal com arco de choque ciano' },
-  { key: 'dash_aereo', label: 'Dash Aéreo', desc: 'Investida horizontal em pleno voo' },
-  { key: 'escalada', label: 'Escalada / Deslize', desc: 'Apoiado em paredes rochosas' },
-  { key: 'mergulho', label: 'Mergulho Abissal', desc: 'Descida vertical com lâmina para baixo' },
-  { key: 'lamina', label: 'Lâmina (Efeito do Corte / Slash FX)', desc: 'Efeito do arco cortante no ar (PNG sem fundo)' },
-  { key: 'lamina_vertical', label: 'Lâmina (Corte para Cima)', desc: 'Efeito do corte ascendente' },
-  { key: 'lamina_baixo', label: 'Lâmina (Corte Baixo / Pogo)', desc: 'Efeito do corte descendente para quicar' },
-  { key: 'espada', label: 'Espada (Golpe do Personagem)', desc: 'Animação de Nox desferindo o golpe de espada' },
-  { key: 'ataque_horizontal', label: 'Ataque Lateral', desc: 'Corte horizontal com arco ciano' },
-  { key: 'ataque_vertical', label: 'Ataque Vertical', desc: 'Corte ascendente em arco' },
-  { key: 'ataque_baixo', label: 'Ataque Baixo (Pogo)', desc: 'Golpe descendente para quicar' },
-  { key: 'entrar_porta', label: 'Entrar em Portas', desc: 'Passagem por arcos, portais e transições de tela' },
-  { key: 'interagir', label: 'Interagir', desc: 'Comunhão em totens de repouso, tábuas e altares' },
-  { key: 'falar', label: 'Falar / Conversar', desc: 'Postura de diálogo ao conversar com NPCs' },
-  { key: 'curar', label: 'Curar (Pulso)', desc: 'Ajoelhado com relíquia de ressonância' },
-  { key: 'dano', label: 'Receber Dano', desc: 'Recuo com fagulhas púrpuras' },
-  { key: 'morrer', label: 'Morrer', desc: 'Dissolução pacífica em cinzas' },
-];
-
 export const SpriteManagerModal: React.FC<SpriteManagerModalProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<AnimationStateName>('idle');
-  const [viewMode, setViewMode] = useState<'editor' | 'speeds'>('editor');
+  const [viewMode, setViewMode] = useState<'editor' | 'speeds' | 'code'>('editor');
+  const [groupFilter, setGroupFilter] = useState<'all' | 'nox' | 'npc' | 'enemy'>('all');
   const [speedSearch, setSpeedSearch] = useState('');
   const [useCustom, setUseCustom] = useState(spriteStore.useCustomSprites);
   const [frames, setFrames] = useState<CustomFrame[]>(spriteStore.customSprites[activeTab] || []);
   const [previewFrameIdx, setPreviewFrameIdx] = useState(0);
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  const [copiedCodeToast, setCopiedCodeToast] = useState(false);
 
   // Speed regulation states
   const [globalFps, setGlobalFpsState] = useState(spriteStore.globalFps);
-  const [categoryFpsMap, setCategoryFpsMap] = useState<Record<string, number>>({ ...spriteStore.categoryFps });
+  const [categoryFpsMap, setCategoryFpsMap] = useState<Record<string, number>>({
+    ...spriteStore.categoryFps,
+  });
 
   const showToast = (msg: string) => {
     setStatusToast(msg);
@@ -98,104 +77,131 @@ export const SpriteManagerModal: React.FC<SpriteManagerModalProps> = ({ onClose 
   useEffect(() => {
     const unsub = spriteStore.subscribe(() => {
       setUseCustom(spriteStore.useCustomSprites);
-      setFrames([...(spriteStore.customSprites[activeTab] || [])]);
       setGlobalFpsState(spriteStore.globalFps);
       setCategoryFpsMap({ ...spriteStore.categoryFps });
+      setFrames(spriteStore.customSprites[activeTab] || []);
     });
-    return () => {
-      unsub();
-    };
+    return unsub;
   }, [activeTab]);
 
-  // Direct individual adjustment for a category
-  const handleIndividualCategoryFps = (catKey: AnimationStateName, newFps: number) => {
-    spriteStore.setCategoryFps(catKey, newFps);
-    setCategoryFpsMap({ ...spriteStore.categoryFps });
+  const handleToggleUseCustom = () => {
+    const nextVal = !useCustom;
+    setUseCustom(nextVal);
+    spriteStore.setUseCustom(nextVal);
+    showToast(
+      nextVal
+        ? 'Sprites personalizados ativados no jogo!'
+        : 'Arte padrão procedural reativada.'
+    );
   };
 
-  const handleApplyPreset = (fps: number) => {
-    handleIndividualCategoryFps(activeTab, fps);
-    showToast(`Velocidade de [${activeCategory?.label || activeTab}] ajustada para ${fps} FPS`);
+  const handleCategoryFpsChange = (catKey: AnimationStateName, newFps: number) => {
+    const valid = Math.max(1, Math.min(30, Math.round(newFps)));
+    spriteStore.setCategoryFps(catKey, valid);
+    setCategoryFpsMap((prev) => ({ ...prev, [catKey]: valid }));
+  };
+
+  const handleResetCategoryFps = (catKey: AnimationStateName) => {
+    spriteStore.setCategoryFps(catKey, null);
+    setCategoryFpsMap((prev) => {
+      const copy = { ...prev };
+      delete copy[catKey];
+      return copy;
+    });
+    showToast(`Velocidade de "${catKey}" resetada para o padrão global.`);
+  };
+
+  const handleGlobalFpsChange = (newFps: number) => {
+    const valid = Math.max(1, Math.min(30, Math.round(newFps)));
+    setGlobalFpsState(valid);
+    spriteStore.setGlobalFps(valid);
   };
 
   const handleApplyToAllCategories = (fps: number) => {
     spriteStore.setAllCategoriesFps(fps);
-    setGlobalFpsState(fps);
-    setCategoryFpsMap({ ...spriteStore.categoryFps });
-    showToast(`Todas as animações configuradas para ${fps} FPS`);
+    showToast(`Todas as categorias configuradas para ${fps} FPS!`);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    let count = 0;
+    let addedCount = 0;
     Array.from(files).forEach((file) => {
+      if (!file.type.startsWith('image/')) return;
       const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
+      reader.onload = (loadEvent) => {
+        const dataUrl = loadEvent.target?.result as string;
         if (dataUrl) {
           spriteStore.addFrame(activeTab, dataUrl);
-          count++;
-          setFrames([...(spriteStore.customSprites[activeTab] || [])]);
-          setUseCustom(true);
-          showToast(`${count} frame(s) adicionados e salvos permanentemente!`);
+          addedCount++;
         }
       };
       reader.readAsDataURL(file);
     });
-    e.target.value = '';
-  };
 
-  const handleToggleUseCustom = (val: boolean) => {
-    spriteStore.setUseCustom(val);
-    setUseCustom(val);
-    showToast(
-      val
-        ? 'Modo: Sprites Personalizados ativado!'
-        : 'Modo: Visual Ilustrado Original ativado!'
-    );
+    e.target.value = '';
+    setTimeout(() => {
+      showToast(`${addedCount || files.length} frame(s) adicionado(s) e salvo(s) com sucesso!`);
+    }, 300);
   };
 
   const handleRemoveFrame = (frameId: string) => {
     spriteStore.removeFrame(activeTab, frameId);
-    setFrames([...(spriteStore.customSprites[activeTab] || [])]);
-    showToast('Frame removido e salvo no banco de dados!');
+    showToast('Frame removido.');
   };
 
   const handleClearCategory = () => {
-    spriteStore.clearCategory(activeTab);
-    setFrames([]);
-    showToast(`Frames de [${activeCategory.label}] limpos!`);
+    if (confirm(`Tem certeza que deseja apagar todos os frames de "${activeTab}"?`)) {
+      spriteStore.clearCategory(activeTab);
+      showToast(`Todos os frames de "${activeTab}" foram removidos.`);
+    }
   };
 
-  // Export full sprite package as JSON file
   const handleExportBackup = () => {
-    const jsonStr = spriteStore.exportBackup();
-    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const json = spriteStore.exportBackup();
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `echoward_sprites_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `echoward_sprites_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Backup exportado com sucesso! Guarde este arquivo em seu computador.');
+    showToast('Backup JSON exportado com sucesso!');
   };
 
-  // Import full sprite package from JSON file
+  const handleCopyEmbeddedCode = () => {
+    const code = spriteStore.exportAsEmbeddedCode();
+    navigator.clipboard.writeText(code).then(() => {
+      setCopiedCodeToast(true);
+      showToast('Código TypeScript copiado para a Área de Transferência!');
+      setTimeout(() => setCopiedCodeToast(false), 3000);
+    });
+  };
+
+  const handleDownloadEmbeddedFile = () => {
+    const code = spriteStore.exportAsEmbeddedCode();
+    const blob = new Blob([code], { type: 'text/typescript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'embeddedSprites.ts';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Arquivo embeddedSprites.ts baixado!');
+  };
+
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const text = ev.target?.result as string;
+    reader.onload = async (loadEvt) => {
+      const text = loadEvt.target?.result as string;
       if (text) {
-        const res = await spriteStore.importBackup(text);
-        if (res.success) {
-          setFrames([...(spriteStore.customSprites[activeTab] || [])]);
-          setUseCustom(true);
-          showToast(`Backup importado com sucesso! ${res.frameCount} frames carregados.`);
+        const result = await spriteStore.importBackup(text);
+        if (result.success) {
+          showToast(`Backup importado! ${result.frameCount} frames carregados.`);
         } else {
           showToast('Erro ao importar arquivo de backup.');
         }
@@ -205,24 +211,29 @@ export const SpriteManagerModal: React.FC<SpriteManagerModalProps> = ({ onClose 
     e.target.value = '';
   };
 
-  const activeCategory = ANIMATION_CATEGORIES.find((c) => c.key === activeTab)!;
+  const filteredCategories = ANIMATION_CATEGORIES.filter((c) => {
+    if (groupFilter !== 'all' && c.group !== groupFilter) return false;
+    return true;
+  });
+
+  const activeCategory =
+    ANIMATION_CATEGORIES.find((c) => c.key === activeTab) || ANIMATION_CATEGORIES[0];
   const totalFrames = spriteStore.getTotalFrameCount();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-md select-none">
-      <div className="relative flex h-[92vh] w-full max-w-6xl flex-col rounded-xl border border-slate-700/80 bg-[#090e17] text-slate-200 shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-3 sm:p-4 backdrop-blur-md select-none font-sans">
+      <div className="relative flex h-[94vh] w-full max-w-6xl flex-col rounded-2xl border border-slate-700/80 bg-[#090e17] text-slate-200 shadow-2xl overflow-hidden">
         {/* Top Header */}
         <div className="flex flex-wrap items-center justify-between border-b border-slate-800 px-6 py-3.5 gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-950 border border-cyan-700/50 shadow-inner">
-              <ImageIcon className="h-5 w-5 text-cyan-400" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-950 border border-cyan-700/50 shadow-inner text-cyan-400">
+              <Layers className="h-5 w-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-display text-lg font-bold tracking-wider text-slate-100">
-                  Gerenciador de Animações & Sprites de Nox
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg font-bold tracking-wider text-slate-100 font-serif">
+                  Gerenciador de Sprites & Animações
                 </h2>
-                {/* Permanent Storage Badge */}
                 <div
                   className="flex items-center gap-1 rounded-full bg-emerald-950/80 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-300 border border-emerald-700/60 shadow-sm"
                   title="Armazenamento permanente IndexedDB ativo: suas imagens e alterações nunca somem ao recarregar a página!"
@@ -233,7 +244,7 @@ export const SpriteManagerModal: React.FC<SpriteManagerModalProps> = ({ onClose 
                 </div>
               </div>
               <p className="text-xs text-slate-400">
-                Adicione suas imagens sem fundo (PNG) frame por frame para todas as ações de combate e exploração
+                Nox, NPCs (interação e diálogo) e Inimigos - suporte a PNGs transparentes e código embutido
               </p>
             </div>
           </div>
@@ -243,539 +254,562 @@ export const SpriteManagerModal: React.FC<SpriteManagerModalProps> = ({ onClose 
             <div className="flex items-center rounded-lg border border-slate-700 bg-slate-900/90 p-1 text-xs">
               <button
                 onClick={() => setViewMode('editor')}
-                className={`flex items-center gap-1.5 rounded px-2.5 py-1 font-semibold transition-colors ${
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1 font-semibold transition-colors ${
                   viewMode === 'editor'
                     ? 'bg-cyan-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <ImageIcon className="h-3.5 w-3.5" />
-                <span>Editor & Frames</span>
+                Editor de Sprites
               </button>
               <button
                 onClick={() => setViewMode('speeds')}
-                className={`flex items-center gap-1.5 rounded px-2.5 py-1 font-semibold transition-colors ${
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1 font-semibold transition-colors ${
                   viewMode === 'speeds'
-                    ? 'bg-cyan-600 text-white shadow'
+                    ? 'bg-amber-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Sliders className="h-3.5 w-3.5 text-cyan-300" />
-                <span>Painel de Todas as Velocidades</span>
+                <Clock className="h-3.5 w-3.5" />
+                Velocidades (FPS)
               </button>
-            </div>
-
-            {/* Backup Export / Import */}
-            <button
-              onClick={handleExportBackup}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-500 hover:text-white transition-colors"
-              title="Baixar cópia de segurança de todos os seus sprites"
-            >
-              <FileDown className="h-3.5 w-3.5 text-cyan-400" />
-              <span className="hidden md:inline">Backup</span>
-            </button>
-
-            <label
-              className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-500 hover:text-white transition-colors"
-              title="Restaurar sprites a partir de um backup .json"
-            >
-              <FileUp className="h-3.5 w-3.5 text-amber-400" />
-              <span className="hidden md:inline">Restaurar</span>
-              <input
-                type="file"
-                accept=".json,application/json"
-                onChange={handleImportBackup}
-                className="hidden"
-              />
-            </label>
-
-            {/* Toggle Mode */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs">
-              <span className="text-slate-400 hidden lg:inline">Modo:</span>
               <button
-                onClick={() => handleToggleUseCustom(!useCustom)}
-                className={`flex items-center gap-1 font-semibold rounded px-2 py-0.5 transition-colors ${
-                  useCustom
-                    ? 'bg-cyan-600 text-white shadow'
-                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                onClick={() => setViewMode('code')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1 font-semibold transition-colors ${
+                  viewMode === 'code'
+                    ? 'bg-purple-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                {useCustom ? 'Sprites Importados' : 'Ilustrado Procedural'}
+                <Code className="h-3.5 w-3.5" />
+                Salvar no Código
               </button>
             </div>
 
+            {/* Toggle Custom vs Procedural */}
+            <button
+              onClick={handleToggleUseCustom}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all border ${
+                useCustom
+                  ? 'border-cyan-500/70 bg-cyan-950/80 text-cyan-300 shadow-md shadow-cyan-900/40'
+                  : 'border-slate-700 bg-slate-800 text-slate-400'
+              }`}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+              <span>{useCustom ? 'Sprites Custom: ATIVO' : 'Sprites Custom: DESLIGADO'}</span>
+            </button>
+
+            {/* Close Button */}
             <button
               onClick={onClose}
-              className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
-              title="Fechar gerenciador"
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
           </div>
         </div>
 
-        {/* Live Notification Toast */}
+        {/* Status Toast */}
         {statusToast && (
-          <div className="absolute top-16 inset-x-0 z-50 flex justify-center pointer-events-none">
-            <div className="flex items-center gap-2 rounded-lg border border-cyan-500/70 bg-slate-950/95 px-4 py-2 text-xs font-semibold text-cyan-200 shadow-xl backdrop-blur-md animate-fade-in">
-              <Sparkles className="h-4 w-4 text-cyan-400" />
-              <span>{statusToast}</span>
-            </div>
+          <div className="absolute top-16 right-6 z-50 flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xl animate-bounce">
+            <Check className="h-4 w-4" />
+            <span>{statusToast}</span>
           </div>
         )}
 
-        {/* Content Body */}
-        <div className="grid flex-1 grid-cols-1 md:grid-cols-4 overflow-hidden">
-          {/* Categories Sidebar */}
-          <div className="border-r border-slate-800/80 bg-[#06090e] p-3 overflow-y-auto space-y-1">
-            <div className="flex items-center justify-between px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              <span>Categorias ({ANIMATION_CATEGORIES.length})</span>
-              <span className="font-mono text-cyan-400">{totalFrames} frames</span>
-            </div>
-
-            {ANIMATION_CATEGORIES.map((cat) => {
-              const count = spriteStore.customSprites[cat.key]?.length || 0;
-              const isSelected = activeTab === cat.key;
-              const catFpsVal = spriteStore.getFps(cat.key);
-              return (
+        {/* VIEW 1: EDITOR */}
+        {viewMode === 'editor' && (
+          <div className="flex flex-1 overflow-hidden">
+            {/* Sidebar with Groups and Categories */}
+            <div className="w-80 border-r border-slate-800 bg-[#060a12] flex flex-col">
+              {/* Group Filters */}
+              <div className="p-2 border-b border-slate-800/80 flex gap-1 bg-slate-950/60">
                 <button
-                  key={cat.key}
-                  onClick={() => {
-                    setActiveTab(cat.key);
-                    if (viewMode === 'speeds') setViewMode('editor');
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors ${
-                    isSelected
-                      ? 'border border-cyan-500/60 bg-slate-900 text-cyan-200 font-semibold shadow-sm shadow-cyan-950'
-                      : 'text-slate-400 hover:bg-slate-900/60 hover:text-slate-200'
+                  onClick={() => setGroupFilter('all')}
+                  className={`flex-1 py-1 text-[11px] font-semibold rounded ${
+                    groupFilter === 'all'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  <div className="flex flex-col truncate pr-2">
-                    <span className="truncate">{cat.label}</span>
-                    <span className="text-[10px] text-slate-400 truncate">{cat.desc}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="rounded bg-slate-950 px-1.5 py-0.5 text-[10px] font-mono text-cyan-300 border border-slate-800" title={`Velocidade Individual: ${catFpsVal} FPS`}>
-                      {catFpsVal} FPS
-                    </span>
-                    {count > 0 ? (
-                      <span className="rounded-full bg-cyan-950 px-1.5 py-0.5 text-[10px] font-mono text-cyan-300 border border-cyan-700">
-                        {count}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-slate-600 font-mono">0</span>
-                    )}
-                  </div>
+                  Todos ({ANIMATION_CATEGORIES.length})
                 </button>
-              );
-            })}
-          </div>
-
-          {/* Main Content Area */}
-          <div className="col-span-3 flex flex-col justify-between p-6 overflow-y-auto bg-[#090e17]">
-            {viewMode === 'speeds' ? (
-              /* All Categories Individual Speeds Panel */
-              <div className="space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-                  <div>
-                    <h3 className="font-display text-xl font-bold text-slate-100 flex items-center gap-2">
-                      <Sliders className="h-5 w-5 text-cyan-400" />
-                      Regulador de Velocidades Individuais
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Ajuste individualmente a taxa de quadros (FPS) de cada uma das {ANIMATION_CATEGORIES.length} ações.
-                    </p>
-                  </div>
-
-                  {/* Search / Filter */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
-                    <input
-                      type="text"
-                      placeholder="Filtrar ação (ex: correr, pulo, lamina)..."
-                      value={speedSearch}
-                      onChange={(e) => setSpeedSearch(e.target.value)}
-                      className="rounded-lg border border-slate-700 bg-slate-900/90 pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:border-cyan-500 focus:outline-none w-64"
-                    />
-                  </div>
-                </div>
-
-                {/* Batch presets */}
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#060a12] p-4">
-                  <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
-                    <Sparkles className="h-4 w-4 text-cyan-400" />
-                    Ajustar todas de uma vez:
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handleApplyToAllCategories(2)}
-                      className="px-3 py-1 text-xs rounded-md bg-slate-900 border border-slate-700 text-slate-300 hover:border-cyan-500 hover:text-white transition-colors"
-                    >
-                      🐌 Todas em 2 FPS (Muito Lenta)
-                    </button>
-                    <button
-                      onClick={() => handleApplyToAllCategories(4)}
-                      className="px-3 py-1 text-xs rounded-md bg-slate-900 border border-slate-700 text-slate-300 hover:border-cyan-500 hover:text-white transition-colors"
-                    >
-                      🐢 Todas em 4 FPS (Lenta)
-                    </button>
-                    <button
-                      onClick={() => handleApplyToAllCategories(5)}
-                      className="px-3 py-1 text-xs rounded-md bg-cyan-950 border border-cyan-700 text-cyan-200 hover:bg-cyan-900/60 transition-colors font-medium"
-                    >
-                      ✨ Todas em 5 FPS (Recomendada)
-                    </button>
-                    <button
-                      onClick={() => handleApplyToAllCategories(8)}
-                      className="px-3 py-1 text-xs rounded-md bg-slate-900 border border-slate-700 text-slate-300 hover:border-cyan-500 hover:text-white transition-colors"
-                    >
-                      🏃 Todas em 8 FPS (Padrão)
-                    </button>
-                  </div>
-                </div>
-
-                {/* Grid of Individual Category Speed Sliders */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {ANIMATION_CATEGORIES.filter((cat) => {
-                    if (!speedSearch.trim()) return true;
-                    const q = speedSearch.toLowerCase();
-                    return cat.label.toLowerCase().includes(q) || cat.desc.toLowerCase().includes(q);
-                  }).map((cat) => {
-                    const currentFps = spriteStore.getFps(cat.key);
-                    const count = spriteStore.customSprites[cat.key]?.length || 0;
-                    return (
-                      <div
-                        key={cat.key}
-                        className="rounded-xl border border-slate-800 bg-[#080d17] p-4 shadow-sm hover:border-slate-700 transition-colors flex flex-col justify-between gap-3"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-display text-sm font-bold text-slate-200">
-                                {cat.label}
-                              </h4>
-                              {count > 0 && (
-                                <span className="rounded-full bg-cyan-950 px-2 py-0.5 text-[10px] font-mono text-cyan-300 border border-cyan-800">
-                                  {count} frames
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-slate-400 mt-0.5">{cat.desc}</p>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 rounded-full border border-cyan-800/80 bg-cyan-950/70 px-2.5 py-0.5 text-xs font-mono text-cyan-300 shrink-0">
-                            <Clock className="h-3 w-3 text-cyan-400" />
-                            <span className="font-bold">{currentFps} FPS</span>
-                          </div>
-                        </div>
-
-                        {/* Individual Slider */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                            <span>1 FPS</span>
-                            <span className="text-cyan-300">~{Math.round(1000 / currentFps)}ms por frame</span>
-                            <span>20 FPS</span>
-                          </div>
-                          <input
-                            type="range"
-                            min={1}
-                            max={20}
-                            step={1}
-                            value={currentFps}
-                            onChange={(e) => handleIndividualCategoryFps(cat.key, Number(e.target.value))}
-                            className="w-full accent-cyan-400 h-2 bg-slate-800 rounded-lg cursor-pointer"
-                          />
-                        </div>
-
-                        {/* Presets and Go to frames button */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-[11px]">
-                          <div className="flex items-center gap-1">
-                            {[2, 4, 5, 8, 12].map((pVal) => (
-                              <button
-                                key={pVal}
-                                onClick={() => handleIndividualCategoryFps(cat.key, pVal)}
-                                className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
-                                  currentFps === pVal
-                                    ? 'bg-cyan-600 text-white font-bold'
-                                    : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                                }`}
-                              >
-                                {pVal} FPS
-                              </button>
-                            ))}
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              setActiveTab(cat.key);
-                              setViewMode('editor');
-                            }}
-                            className="text-cyan-400 hover:text-cyan-300 underline font-medium text-[11px]"
-                          >
-                            Editar frames
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <button
+                  onClick={() => setGroupFilter('nox')}
+                  className={`flex-1 py-1 text-[11px] font-semibold rounded flex items-center justify-center gap-1 ${
+                    groupFilter === 'nox'
+                      ? 'bg-cyan-700 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <User className="w-3 h-3" />
+                  Nox
+                </button>
+                <button
+                  onClick={() => setGroupFilter('npc')}
+                  className={`flex-1 py-1 text-[11px] font-semibold rounded flex items-center justify-center gap-1 ${
+                    groupFilter === 'npc'
+                      ? 'bg-emerald-700 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Users className="w-3 h-3" />
+                  NPCs
+                </button>
+                <button
+                  onClick={() => setGroupFilter('enemy')}
+                  className={`flex-1 py-1 text-[11px] font-semibold rounded flex items-center justify-center gap-1 ${
+                    groupFilter === 'enemy'
+                      ? 'bg-rose-700 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Skull className="w-3 h-3" />
+                  Inimigos
+                </button>
               </div>
-            ) : (
-              /* Single Category Frame Editor & Individual Speed Card */
-              <div>
-                {/* Category Title & Actions */}
-                <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-4 mb-5 gap-3">
+
+              {/* Category List */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {filteredCategories.map((cat) => {
+                  const count = spriteStore.customSprites[cat.key]?.length || 0;
+                  const isSelected = activeTab === cat.key;
+                  const catFps = spriteStore.getFps(cat.key);
+                  const isCustomFps =
+                    spriteStore.categoryFps[cat.key] !== undefined &&
+                    spriteStore.categoryFps[cat.key] !== null;
+
+                  return (
+                    <button
+                      key={cat.key}
+                      onClick={() => setActiveTab(cat.key)}
+                      className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors ${
+                        isSelected
+                          ? 'bg-cyan-950/70 border border-cyan-500/50 text-cyan-200 shadow-sm'
+                          : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="truncate mr-2">
+                        <div className="font-semibold truncate flex items-center gap-1.5">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              cat.group === 'nox'
+                                ? 'bg-cyan-400'
+                                : cat.group === 'npc'
+                                ? 'bg-emerald-400'
+                                : 'bg-rose-400'
+                            }`}
+                          />
+                          {cat.label}
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate">{cat.desc}</div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-mono ${
+                            isCustomFps
+                              ? 'bg-amber-950/80 text-amber-300 border border-amber-600/50'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {catFps} FPS
+                        </span>
+
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            count > 0 ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-500'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Footer info */}
+              <div className="p-3 border-t border-slate-800/80 bg-slate-950/80 text-[11px] text-slate-400 flex justify-between items-center">
+                <span>Total de Frames:</span>
+                <span className="font-mono font-bold text-cyan-300">{totalFrames} frames</span>
+              </div>
+            </div>
+
+            {/* Main Stage: Preview & Frame Upload */}
+            <div className="flex-1 flex flex-col overflow-y-auto p-6 space-y-6">
+              {/* Category Info Header */}
+              <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2 font-serif">
+                      <span>{activeCategory.label}</span>
+                    </h3>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                        activeCategory.group === 'nox'
+                          ? 'bg-cyan-950 text-cyan-300 border border-cyan-700/60'
+                          : activeCategory.group === 'npc'
+                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                          : 'bg-rose-950 text-rose-300 border border-rose-700/60'
+                      }`}
+                    >
+                      {activeCategory.group}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">{activeCategory.desc}</p>
+                </div>
+
+                {/* Individual Speed Regulator */}
+                <div className="flex items-center gap-3 bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800">
+                  <Clock className="w-4 h-4 text-amber-400" />
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-display text-xl font-bold text-slate-100">
-                        {activeCategory.label}
-                      </h3>
-                      <span className="text-xs font-mono text-cyan-400">
-                        [{frames.length} frame{frames.length !== 1 ? 's' : ''}]
+                    <div className="flex justify-between items-center text-[11px] mb-1">
+                      <span className="text-slate-400 font-semibold">Velocidade desta ação:</span>
+                      <span className="font-mono font-bold text-amber-400 ml-2">
+                        {currentActiveFps} FPS
                       </span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">
-                      {activeCategory.desc}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="1"
+                        max="24"
+                        value={currentActiveFps}
+                        onChange={(e) =>
+                          handleCategoryFpsChange(activeTab, parseInt(e.target.value, 10))
+                        }
+                        className="w-28 h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-400"
+                      />
+                      {categoryFpsMap[activeTab] && (
+                        <button
+                          onClick={() => handleResetCategoryFps(activeTab)}
+                          className="text-[10px] text-slate-500 hover:text-slate-300 underline"
+                          title="Restaurar padrão global"
+                        >
+                          Resetar
+                        </button>
+                      )}
+                    </div>
                   </div>
+                </div>
+              </div>
 
-                  <div className="flex items-center gap-2">
-                    <label className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-cyan-600 px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-500 transition-colors shadow-md shadow-cyan-900/40">
-                      <Upload className="h-4 w-4" />
-                      Adicionar Imagens PNG (Sem Fundo)
+              {/* Preview Box & Upload Dropzone */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Live Preview Animation */}
+                <div className="flex flex-col items-center justify-center p-6 bg-slate-950/80 rounded-2xl border border-slate-800/80 relative min-h-[220px]">
+                  <span className="absolute top-3 left-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+                    Prévia ao Vivo ({currentActiveFps} FPS)
+                  </span>
+
+                  {frames.length > 0 ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="relative w-36 h-36 flex items-center justify-center bg-slate-900/60 rounded-xl border border-slate-800 overflow-hidden shadow-inner">
+                        <img
+                          src={frames[previewFrameIdx]?.dataUrl}
+                          alt="Preview"
+                          className="max-h-full max-w-full object-contain filter drop-shadow-md"
+                        />
+                      </div>
+                      <div className="text-xs font-mono text-slate-400">
+                        Frame {previewFrameIdx + 1} de {frames.length}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center text-slate-500 p-4">
+                      <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-30 text-slate-400" />
+                      <p className="text-xs">Nenhum frame customizado adicionado ainda.</p>
+                      <p className="text-[11px] text-slate-600 mt-1">
+                        O jogo usará a renderização padrão até você adicionar imagens PNG.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Upload Control */}
+                <div className="flex flex-col justify-center p-6 bg-slate-950/80 rounded-2xl border-2 border-dashed border-slate-800 hover:border-cyan-500/50 transition-colors">
+                  <div className="text-center">
+                    <Upload className="w-10 h-10 mx-auto text-cyan-400 mb-2 opacity-80" />
+                    <h4 className="text-sm font-bold text-slate-200">
+                      Adicionar Frames PNG
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                      Selecione um ou vários arquivos PNG com fundo transparente para compor esta animação.
+                    </p>
+
+                    <label className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl cursor-pointer shadow-lg shadow-cyan-600/30 transition-all">
+                      <Upload className="w-4 h-4" />
+                      Escolher Imagens PNG
                       <input
                         type="file"
-                        accept="image/png,image/webp"
                         multiple
+                        accept="image/png,image/webp,image/gif"
                         onChange={handleFileUpload}
                         className="hidden"
                       />
                     </label>
-
-                    {frames.length > 0 && (
-                      <button
-                        onClick={handleClearCategory}
-                        className="flex items-center gap-1 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300 hover:bg-red-900/60 transition-colors"
-                        title="Limpar todos os frames desta animação"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Limpar Categoria
-                      </button>
-                    )}
                   </div>
-                </div>
-
-                {/* Dedicated Individual Speed Regulator for Active Category */}
-                <div className="rounded-xl border border-cyan-800/60 bg-[#060a12] p-4 mb-6 shadow-inner">
-                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-2">
-                      <Sliders className="h-4 w-4 text-cyan-400" />
-                      <h4 className="font-display font-bold text-sm text-cyan-200">
-                        Velocidade Individual de [{activeCategory.label}]
-                      </h4>
-                      <span className="text-[11px] text-slate-400">
-                        (Ajuste diretamente a velocidade desta ação específica)
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1.5 rounded-full border border-cyan-600/80 bg-cyan-950 px-3 py-1 text-xs font-mono text-cyan-300 shadow">
-                        <Clock className="h-3.5 w-3.5 text-cyan-400" />
-                        <span className="font-bold">{currentActiveFps} FPS</span>
-                        <span className="text-slate-400 text-[10px]">
-                          (~{Math.round(1000 / currentActiveFps)}ms por frame)
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={() => setViewMode('speeds')}
-                        className="flex items-center gap-1 rounded-lg border border-cyan-800/80 bg-cyan-950/40 px-2.5 py-1 text-xs text-cyan-300 hover:bg-cyan-900/60 hover:text-white transition-colors"
-                      >
-                        <Sliders className="h-3.5 w-3.5" />
-                        <span>Ver Todas as Velocidades</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Slider bar directly setting this category */}
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[11px] text-slate-400 min-w-[75px] font-medium">
-                        1 FPS (Muito lenta)
-                      </span>
-                      <input
-                        type="range"
-                        min={1}
-                        max={20}
-                        step={1}
-                        value={currentActiveFps}
-                        onChange={(e) => handleIndividualCategoryFps(activeTab, Number(e.target.value))}
-                        className="flex-1 accent-cyan-400 h-2 bg-slate-800 rounded-lg cursor-pointer transition-all"
-                      />
-                      <span className="text-[11px] text-slate-400 min-w-[75px] text-right font-medium">
-                        20 FPS (Rápida)
-                      </span>
-                    </div>
-
-                    {/* Preset quick buttons & copy to all */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] text-slate-400 mr-1">Atalhos individuais:</span>
-                        {[
-                          { fps: 2, label: '🐌 2 FPS' },
-                          { fps: 3, label: '3 FPS' },
-                          { fps: 4, label: '🐢 4 FPS' },
-                          { fps: 5, label: '✨ 5 FPS' },
-                          { fps: 6, label: '6 FPS' },
-                          { fps: 8, label: '🏃 8 FPS' },
-                          { fps: 12, label: '⚡ 12 FPS' },
-                        ].map((p) => (
-                          <button
-                            key={p.fps}
-                            onClick={() => handleApplyPreset(p.fps)}
-                            className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${
-                              currentActiveFps === p.fps
-                                ? 'bg-cyan-600 text-white font-bold shadow-sm'
-                                : 'bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
-                            }`}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleApplyToAllCategories(currentActiveFps)}
-                          className="text-[11px] text-cyan-400 hover:text-cyan-300 underline font-medium"
-                          title="Configura todas as outras 24 animações com este mesmo valor"
-                        >
-                          Copiar {currentActiveFps} FPS para todas as outras animações
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Real-Time Animation Preview Box */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
-                <div className="flex flex-col items-center justify-center rounded-xl border border-slate-800 bg-[#06090f] p-5 shadow-inner">
-                  <span className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">
-                    Prévia da Animação ({frames.length} frames)
-                  </span>
-                  <div className="relative flex h-36 w-36 items-center justify-center rounded-lg border border-slate-700/60 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:12px_12px] overflow-hidden">
-                    {frames.length > 0 ? (
-                      <img
-                        src={frames[previewFrameIdx]?.dataUrl}
-                        alt="Preview"
-                        className="h-28 w-28 object-contain"
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center text-slate-400 text-xs text-center p-2">
-                        <ImageIcon className="h-8 w-8 text-slate-600 mb-1" />
-                        <span>Nenhum frame enviado</span>
-                        <span className="text-[10px] text-cyan-400/80 mt-1">Usando visual ilustrado</span>
-                      </div>
-                    )}
-                  </div>
-                  {frames.length > 1 && (
-                    <span className="mt-2 text-[11px] font-mono text-cyan-300">
-                      Reproduzindo Frame {previewFrameIdx + 1} de {frames.length}
-                    </span>
-                  )}
-                </div>
-
-                {/* Instructions & Guidelines matching User Sheet */}
-                <div className="col-span-2 rounded-xl border border-slate-800 bg-slate-900/40 p-5 text-xs text-slate-300 space-y-3">
-                  <h4 className="font-display font-bold text-sm text-cyan-300 flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-cyan-400" />
-                    Pulo, Queda & Ações Solicitadas:
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1.5 text-slate-400">
-                    <li>
-                      <strong className="text-slate-200">Pulo Separado:</strong> Agora você tem <em>"Pulo (Ao Apertar / Impulso)"</em> para o frame exato da saída do chão e <em>"Pulo no Ar (Subida)"</em> enquanto Nox estiver ascendendo pelo ar.
-                    </li>
-                    <li>
-                      <strong className="text-slate-200">Queda Separada:</strong> Use <em>"Queda no Ar (Descida)"</em> para o sprite enquanto Nox cai pelo ar e <em>"Aterrissagem (Ao Tocar o Chão)"</em> para o impacto e agachamento no solo.
-                    </li>
-                    <li>
-                      <strong className="text-slate-200">Permanência Absoluta:</strong> Todos os frames enviados são salvos de forma assíncrona no <strong>IndexedDB</strong> local do seu navegador e nunca somem ao recarregar a página.
-                    </li>
-                    <li>
-                      <strong className="text-slate-200">Animação da Lâmina (Slash FX):</strong> Na categoria <em>"Lâmina (Efeito do Corte / Slash FX)"</em> você pode enviar os frames da onda de corte / arco cortante da lâmina sem fundo (PNG). O jogo projeta e rotaciona o efeito diretamente na ponta da lâmina ao atacar!
-                    </li>
-                    <li>
-                      <strong className="text-slate-200">Espada, Portas & Interações:</strong> Categorias dedicadas para golpe do personagem, entrar em portas, falar com NPCs e interagir com totens/altares.
-                    </li>
-                  </ul>
                 </div>
               </div>
 
-              {/* Uploaded Frames Grid */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-display text-sm font-bold uppercase tracking-wider text-slate-300">
-                    Frames Cadastrados para [{activeCategory.label}]
+              {/* Frames Gallery */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Frames desta Categoria ({frames.length})
                   </h4>
+
                   {frames.length > 0 && (
-                    <span className="text-xs text-slate-400">
-                      Passe o mouse sobre um frame para excluí-lo individualmente
-                    </span>
+                    <button
+                      onClick={handleClearCategory}
+                      className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Limpar Todos os Frames
+                    </button>
                   )}
                 </div>
 
-                {frames.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-800 p-8 text-center text-xs text-slate-400">
-                    Nenhum frame adicionado ainda nesta categoria. Clique em <strong>"Adicionar Imagens PNG"</strong> acima para carregar suas artes sem fundo.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                    {frames.map((f, idx) => (
+                {frames.length > 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                    {frames.map((frame, idx) => (
                       <div
-                        key={f.id}
-                        className="group relative flex flex-col items-center rounded-lg border border-slate-800 bg-slate-900/70 p-2 hover:border-slate-600 transition-colors"
+                        key={frame.id}
+                        className={`group relative flex flex-col items-center bg-slate-900 border rounded-xl p-2 transition-all ${
+                          previewFrameIdx === idx
+                            ? 'border-cyan-400 shadow-md shadow-cyan-500/20'
+                            : 'border-slate-800'
+                        }`}
                       >
-                        <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded bg-black/50">
+                        <div className="w-16 h-16 flex items-center justify-center overflow-hidden mb-1">
                           <img
-                            src={f.dataUrl}
+                            src={frame.dataUrl}
                             alt={`Frame ${idx + 1}`}
-                            className="h-18 w-18 object-contain"
+                            className="max-h-full max-w-full object-contain"
                           />
                         </div>
-                        <span className="mt-1 font-mono text-[10px] text-slate-400">
-                          Frame #{idx + 1}
-                        </span>
+                        <span className="text-[10px] font-mono text-slate-400">#{idx + 1}</span>
+
                         <button
-                          onClick={() => handleRemoveFrame(f.id)}
-                          className="absolute -top-1.5 -right-1.5 rounded-full bg-red-600 p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
-                          title="Remover este frame"
+                          onClick={() => handleRemoveFrame(frame.id)}
+                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 bg-rose-950/90 text-rose-400 rounded-lg hover:bg-rose-900 transition-opacity"
+                          title="Remover frame"
                         >
-                          <X className="h-3 w-3" />
+                          <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <div className="p-6 text-center text-xs text-slate-500 bg-slate-900/30 rounded-xl border border-slate-800/40">
+                    Nenhum frame carregado. Arraste ou clique em "Escolher Imagens PNG" acima.
+                  </div>
                 )}
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-            {/* Footer */}
-            <div className="mt-6 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-3">
-              <div className="flex items-center gap-2">
-                <Database className="h-4 w-4 text-emerald-400" />
-                <span>
-                  Armazenamento ativo: <strong>IndexedDB Local</strong> (Suporta centenas de megabytes de imagens sem limites).
-                </span>
+        {/* VIEW 2: ALL SPEEDS PANEL */}
+        {viewMode === 'speeds' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Global Speed Banner */}
+            <div className="p-5 bg-slate-950/80 rounded-2xl border border-amber-500/30 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400" />
+                  Velocidade Global de Fallback
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Taxa de quadros aplicada a qualquer ação que não possua velocidade individual customizada.
+                </p>
               </div>
-              <button
-                onClick={onClose}
-                className="rounded-lg bg-cyan-600 px-6 py-2 font-semibold text-white hover:bg-cyan-500 transition-colors shadow-md shadow-cyan-950"
-              >
-                Concluir & Voltar ao Jogo
-              </button>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="1"
+                  max="24"
+                  value={globalFps}
+                  onChange={(e) => handleGlobalFpsChange(parseInt(e.target.value, 10))}
+                  className="w-32 h-2 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-400"
+                />
+                <span className="font-mono font-bold text-amber-300 text-sm">{globalFps} FPS</span>
+
+                <button
+                  onClick={() => handleApplyToAllCategories(globalFps)}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-xs rounded-xl transition-all shadow"
+                >
+                  Aplicar a Todas
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Search */}
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar categoria de animação..."
+                  value={speedSearch}
+                  onChange={(e) => setSpeedSearch(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/60"
+                />
+              </div>
+            </div>
+
+            {/* Grid of All Categories */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {ANIMATION_CATEGORIES.filter((c) =>
+                c.label.toLowerCase().includes(speedSearch.toLowerCase()) ||
+                c.key.toLowerCase().includes(speedSearch.toLowerCase())
+              ).map((cat) => {
+                const effectiveFps = spriteStore.getFps(cat.key);
+                const isCustom = categoryFpsMap[cat.key] !== undefined && categoryFpsMap[cat.key] !== null;
+
+                return (
+                  <div
+                    key={cat.key}
+                    className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-bold text-xs text-slate-200 truncate">{cat.label}</div>
+                        <div className="text-[10px] text-slate-400">{cat.desc}</div>
+                      </div>
+                      <span
+                        className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                          isCustom
+                            ? 'bg-amber-950 text-amber-300 border border-amber-500/50'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {effectiveFps} FPS
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="range"
+                        min="1"
+                        max="24"
+                        value={effectiveFps}
+                        onChange={(e) =>
+                          handleCategoryFpsChange(cat.key, parseInt(e.target.value, 10))
+                        }
+                        className="flex-1 h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-400"
+                      />
+                      {isCustom && (
+                        <button
+                          onClick={() => handleResetCategoryFps(cat.key)}
+                          className="text-[10px] text-slate-500 hover:text-slate-300 underline"
+                        >
+                          Padrão
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
+        )}
+
+        {/* VIEW 3: SAVE TO CODE (EMBEDDED CODE EXPORT) */}
+        {viewMode === 'code' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="p-5 bg-purple-950/20 border border-purple-500/40 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-purple-300 flex items-center gap-2 font-serif">
+                  <Code className="w-5 h-5 text-purple-400" />
+                  Salvar Sprites Diretamente no Código Fonte
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                  Seus sprites já estão seguros permanentemente no navegador via IndexedDB. Você também pode
+                  exportar o arquivo TypeScript <code className="text-purple-300">src/game/embeddedSprites.ts</code> com 1 clique para que as artes fiquem guardadas para sempre no repositório Git!
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleCopyEmbeddedCode}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-purple-600/30 transition-all"
+                >
+                  {copiedCodeToast ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copiedCodeToast ? 'Código Copiado!' : 'Copiar Código TypeScript'}
+                </button>
+
+                <button
+                  onClick={handleDownloadEmbeddedFile}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/50 font-bold text-xs rounded-xl flex items-center gap-2 transition-all"
+                >
+                  <Download className="w-4 h-4" />
+                  Baixar embeddedSprites.ts
+                </button>
+              </div>
+            </div>
+
+            {/* Backups JSON */}
+            <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-slate-200">
+                  Backup Completo em Arquivo JSON
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  Exporte ou importe todos os seus frames e configurações em um arquivo portátil.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportBackup}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  Exportar Backup JSON
+                </button>
+
+                <label className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 cursor-pointer">
+                  <FileUp className="w-3.5 h-3.5" />
+                  Importar Backup
+                  <input
+                    type="file"
+                    accept="application/json"
+                    onChange={handleImportBackup}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Code Snippet Preview */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Prévia do Código Gerado:
+              </span>
+              <pre className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto max-h-72">
+                {spriteStore.exportAsEmbeddedCode().slice(0, 1800)}...
+              </pre>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between text-xs">
+          <div className="text-slate-400 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span>IndexedDB Ativo</span>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg shadow-md shadow-cyan-600/20"
+          >
+            Concluir & Voltar ao Jogo
+          </button>
         </div>
       </div>
     </div>

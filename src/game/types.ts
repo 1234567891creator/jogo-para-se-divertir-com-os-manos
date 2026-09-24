@@ -171,12 +171,13 @@ export interface GameRoom {
 }
 
 export type EnemyType =
-  | 'crawler'            // Skittering ash beetle
-  | 'specter'            // Floating resonance moth
-  | 'varron_sentinel'    // Armored copper guard
-  | 'abyss_diver'        // Lurking shadow bat
-  | 'boss_guardian'      // O Guardião do Silêncio
-  | 'boss_shade';        // A Sombra de Ner
+  | 'crawler'               // Skittering ash beetle
+  | 'specter'               // Floating resonance moth
+  | 'varron_sentinel'       // Armored copper guard
+  | 'abyss_diver'           // Lurking shadow bat
+  | 'boss_guardian'         // BOSS 1: O Guardião do Silêncio
+  | 'boss_varron_colossus'  // BOSS 2: Colosso Forjado de Varron
+  | 'boss_shade';           // BOSS 3: A Sombra de Ner · Arauto do Vazio
 
 export interface EnemySpawn {
   id: string;

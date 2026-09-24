@@ -6,6 +6,7 @@
 import { PlayerState, Platform, AttackSlash, Rect } from './types';
 import { soundEngine } from './audio';
 import { spriteStore } from './spriteStore';
+import { adminStore } from './adminStore';
 
 export const GRAVITY = 1100;
 export const MAX_FALL_SPEED = 750;
@@ -64,6 +65,35 @@ export class PhysicsEngine {
   ) {
     if (this.screenShake > 0) {
       this.screenShake = Math.max(0, this.screenShake - dt * 25);
+    }
+
+    // Admin Cheat Modifiers
+    if (adminStore.settings.slowMotion) {
+      dt *= 0.45;
+    }
+    if (adminStore.settings.godMode || adminStore.settings.infiniteHp) {
+      player.hp = player.maxHp;
+      player.isDying = false;
+      player.invulnerableTimer = Math.max(player.invulnerableTimer, 0.5);
+    }
+    if (adminStore.settings.infinitePulse) {
+      player.pulse = player.maxPulse;
+    }
+    if (adminStore.settings.infiniteAirJumps) {
+      this.canDoubleJump = true;
+    }
+
+    // Noclip / Fly mode
+    if (adminStore.settings.noclip) {
+      const flySpeed = MOVE_SPEED * (adminStore.settings.speedMultiplier || 1.6);
+      player.vx = input.left ? -flySpeed : input.right ? flySpeed : 0;
+      player.vy = input.up ? -flySpeed : input.down ? flySpeed : 0;
+      player.x += player.vx * dt;
+      player.y += player.vy * dt;
+      player.isGrounded = false;
+      if (player.vx !== 0) player.facing = player.vx > 0 ? 'right' : 'left';
+      player.currentAnimation = player.vx !== 0 || player.vy !== 0 ? 'correr' : 'idle';
+      return;
     }
 
     // Death sequence
@@ -226,13 +256,17 @@ export class PhysicsEngine {
       player.vx = 0;
     } else if (!player.isHealing) {
       // Horizontal movement
+      const effectiveMoveSpeed = MOVE_SPEED * (adminStore.settings.speedMultiplier || 1.0);
+      const effectiveJumpForce = JUMP_FORCE * (adminStore.settings.jumpMultiplier || 1.0);
+      const effectiveDoubleJump = DOUBLE_JUMP_FORCE * (adminStore.settings.jumpMultiplier || 1.0);
+
       let targetVx = 0;
       if (input.left) {
-        targetVx -= MOVE_SPEED;
+        targetVx -= effectiveMoveSpeed;
         player.facing = 'left';
       }
       if (input.right) {
-        targetVx += MOVE_SPEED;
+        targetVx += effectiveMoveSpeed;
         player.facing = 'right';
       }
 
@@ -269,7 +303,7 @@ export class PhysicsEngine {
       if (this.jumpBufferTimer > 0) {
         if (this.coyoteTimer > 0) {
           // Normal Ground Jump (triggers pulo_inicio impulse sprite)
-          player.vy = JUMP_FORCE;
+          player.vy = effectiveJumpForce;
           player.isGrounded = false;
           player.jumpImpulseTimer = 0.15;
           this.coyoteTimer = 0;
@@ -277,10 +311,10 @@ export class PhysicsEngine {
           soundEngine.playJump(false);
         } else if (isTouchingWall && player.abilities.wallClimb) {
           // Wall Jump (Garra) - Kicks cleanly away from wall
-          player.vy = JUMP_FORCE * 0.95;
+          player.vy = effectiveJumpForce * 0.95;
           player.jumpImpulseTimer = 0.15;
           const kickDir = player.wallDirection !== 0 ? -player.wallDirection : -this.lastWallDirection;
-          player.vx = kickDir * MOVE_SPEED * 1.3;
+          player.vx = kickDir * effectiveMoveSpeed * 1.3;
           player.facing = kickDir === 1 ? 'right' : 'left';
           this.jumpBufferTimer = 0;
           this.wallSlideGraceTimer = 0;
@@ -288,7 +322,7 @@ export class PhysicsEngine {
           soundEngine.playJump(false);
         } else if (this.canDoubleJump && player.abilities.doubleJump) {
           // 4. SALTO DE RESSONÂNCIA (Double Jump)
-          player.vy = DOUBLE_JUMP_FORCE;
+          player.vy = effectiveDoubleJump;
           player.jumpImpulseTimer = 0.15;
           this.canDoubleJump = false;
           this.jumpBufferTimer = 0;

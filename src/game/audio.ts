@@ -15,6 +15,10 @@ class SoundEngine {
   private isMuted: boolean = false;
   private isInitialized: boolean = false;
 
+  private masterVol: number = 0.7;
+  private musicVol: number = 0.45;
+  private sfxVol: number = 0.65;
+
   public init() {
     if (this.isInitialized) return;
     try {
@@ -22,15 +26,15 @@ class SoundEngine {
       this.ctx = new AudioContextClass();
 
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(0.7, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.masterVol, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
 
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+      this.musicGain.gain.setValueAtTime(this.musicVol, this.ctx.currentTime);
       this.musicGain.connect(this.masterGain);
 
       this.sfxGain = this.ctx.createGain();
-      this.sfxGain.gain.setValueAtTime(0.6, this.ctx.currentTime);
+      this.sfxGain.gain.setValueAtTime(this.sfxVol, this.ctx.currentTime);
       this.sfxGain.connect(this.masterGain);
 
       this.isInitialized = true;
@@ -40,10 +44,43 @@ class SoundEngine {
     }
   }
 
+  public setMasterVolume(val: number) {
+    this.masterVol = Math.max(0, Math.min(1, val));
+    if (this.masterGain && this.ctx && !this.isMuted) {
+      this.masterGain.gain.setValueAtTime(this.masterVol, this.ctx.currentTime);
+    }
+  }
+
+  public getMasterVolume(): number {
+    return this.masterVol;
+  }
+
+  public setMusicVolume(val: number) {
+    this.musicVol = Math.max(0, Math.min(1, val));
+    if (this.musicGain && this.ctx) {
+      this.musicGain.gain.setValueAtTime(this.musicVol, this.ctx.currentTime);
+    }
+  }
+
+  public getMusicVolume(): number {
+    return this.musicVol;
+  }
+
+  public setSfxVolume(val: number) {
+    this.sfxVol = Math.max(0, Math.min(1, val));
+    if (this.sfxGain && this.ctx) {
+      this.sfxGain.gain.setValueAtTime(this.sfxVol, this.ctx.currentTime);
+    }
+  }
+
+  public getSfxVolume(): number {
+    return this.sfxVol;
+  }
+
   public setMuted(muted: boolean) {
     this.isMuted = muted;
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(muted ? 0 : 0.7, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(muted ? 0 : this.masterVol, this.ctx.currentTime);
     }
   }
 
@@ -66,19 +103,17 @@ class SoundEngine {
       this.musicTimer = null;
     }
 
-    // Melodic notes depending on region
     const scales: Record<string, number[]> = {
-      lumen_village: [220, 261.63, 329.63, 392.0, 440, 523.25], // A minor / serene
-      echo_forest: [196, 233.08, 293.66, 349.23, 392, 466.16],   // G minor moody
-      varron_mines: [146.83, 174.61, 220, 246.94, 293.66, 329.63], // D minor gritty
-      broken_cathedral: [110, 164.81, 220, 261.63, 329.63, 440],  // Low ancient liturgical
-      ner_abyss: [82.41, 110, 130.81, 155.56, 174.61, 220],       // Deep dissonance
+      lumen_village: [220, 261.63, 329.63, 392.0, 440, 523.25], // Sereno Lá menor
+      echo_forest: [196, 233.08, 293.66, 349.23, 392, 466.16],   // Misterioso Sol menor
+      varron_mines: [146.83, 174.61, 220, 246.94, 293.66, 329.63], // Pesado Ré menor
+      broken_cathedral: [110, 164.81, 220, 261.63, 329.63, 440],  // Litúrgico ancestral
+      ner_abyss: [82.41, 110, 130.81, 155.56, 174.61, 220],       // Abissal profundo
       default: [220, 261.63, 329.63, 392, 440]
     };
 
     const notePool = scales[region] || scales.default;
 
-    // Ambient note generator
     const playAmbientNote = () => {
       if (!this.ctx || !this.musicGain || this.isMuted) return;
       if (this.ctx.state === 'suspended') {
@@ -104,7 +139,6 @@ class SoundEngine {
       osc.stop(this.ctx.currentTime + duration);
     };
 
-    // Play first note immediately and then on interval
     playAmbientNote();
     this.musicTimer = window.setInterval(playAmbientNote, 3200);
   }
@@ -133,7 +167,6 @@ class SoundEngine {
 
   public playHit() {
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
-    // Low punchy thump
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'triangle';
@@ -149,7 +182,6 @@ class SoundEngine {
     osc.start();
     osc.stop(this.ctx.currentTime + 0.16);
 
-    // Resonant metallic click
     const click = this.ctx.createOscillator();
     const clickGain = this.ctx.createGain();
     click.type = 'square';
@@ -244,7 +276,6 @@ class SoundEngine {
 
   public playHealComplete() {
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
-    // Chime triad
     [523.25, 659.25, 783.99].forEach((freq, i) => {
       const osc = this.ctx!.createOscillator();
       const gain = this.ctx!.createGain();
@@ -336,6 +367,109 @@ class SoundEngine {
 
       osc.start(this.ctx!.currentTime + idx * 0.1);
       osc.stop(this.ctx!.currentTime + idx * 0.1 + 0.75);
+    });
+  }
+
+  /**
+   * Sound effect for typing the secret Admin code 847717
+   */
+  public playSecretCodeSuccess() {
+    if (!this.ctx || !this.sfxGain || this.isMuted) return;
+    const notes = [440, 554.37, 659.25, 880, 1108.73, 1318.51];
+    notes.forEach((freq, idx) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, this.ctx!.currentTime + idx * 0.05);
+
+      gain.gain.setValueAtTime(0.001, this.ctx!.currentTime + idx * 0.05);
+      gain.gain.linearRampToValueAtTime(0.18, this.ctx!.currentTime + idx * 0.05 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx!.currentTime + idx * 0.05 + 0.5);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+
+      osc.start(this.ctx!.currentTime + idx * 0.05);
+      osc.stop(this.ctx!.currentTime + idx * 0.05 + 0.55);
+    });
+  }
+
+  public playNpcVoice() {
+    if (!this.ctx || !this.sfxGain || this.isMuted) return;
+    const baseFreq = 240 + Math.random() * 80;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, this.ctx.currentTime + 0.08);
+
+    gain.gain.setValueAtTime(0.14, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.12);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.13);
+  }
+
+  public playEnemyDeath() {
+    if (!this.ctx || !this.sfxGain || this.isMuted) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(110, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.35);
+
+    gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.35);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.36);
+  }
+
+  public playBossRoar() {
+    if (!this.ctx || !this.sfxGain || this.isMuted) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(65, this.ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(95, this.ctx.currentTime + 0.3);
+    osc.frequency.exponentialRampToValueAtTime(35, this.ctx.currentTime + 0.8);
+
+    gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.85);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.9);
+  }
+
+  public playCollectShard() {
+    if (!this.ctx || !this.sfxGain || this.isMuted) return;
+    [659.25, 987.77, 1318.51].forEach((freq, idx) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, this.ctx!.currentTime + idx * 0.04);
+      gain.gain.setValueAtTime(0.12, this.ctx!.currentTime + idx * 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx!.currentTime + idx * 0.04 + 0.4);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+
+      osc.start(this.ctx!.currentTime + idx * 0.04);
+      osc.stop(this.ctx!.currentTime + idx * 0.04 + 0.42);
     });
   }
 }

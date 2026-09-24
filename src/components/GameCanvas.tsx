@@ -15,6 +15,46 @@ import { gameRenderer } from '../game/renderer';
 import { soundEngine } from '../game/audio';
 import { multiplayerClient } from '../game/multiplayerClient';
 
+export interface AdminCanvasAction {
+  type: 'kill_enemies' | 'spawn_enemy' | 'teleport' | 'heal_full' | 'pulse_full' | 'unlock_abilities';
+  payload?: any;
+  id: number;
+}
+
+export const mobileInputState = {
+  left: false,
+  right: false,
+  up: false,
+  down: false,
+  jump: false,
+  jumpPressed: false,
+  attackPressed: false,
+  dashPressed: false,
+  healHold: false,
+  visionPressed: false,
+};
+
+export const setMobileInput = (action: string, pressed: boolean) => {
+  if (action === 'left') mobileInputState.left = pressed;
+  if (action === 'right') mobileInputState.right = pressed;
+  if (action === 'up') mobileInputState.up = pressed;
+  if (action === 'down') mobileInputState.down = pressed;
+  if (action === 'jump') {
+    mobileInputState.jump = pressed;
+    if (pressed) mobileInputState.jumpPressed = true;
+  }
+  if (action === 'attack') {
+    if (pressed) mobileInputState.attackPressed = true;
+  }
+  if (action === 'dash') {
+    if (pressed) mobileInputState.dashPressed = true;
+  }
+  if (action === 'heal') mobileInputState.healHold = pressed;
+  if (action === 'vision') {
+    if (pressed) mobileInputState.visionPressed = true;
+  }
+};
+
 interface GameCanvasProps {
   initialPlayer: PlayerState;
   onPlayerHUDUpdate: (player: PlayerState) => void;
@@ -27,6 +67,7 @@ interface GameCanvasProps {
   setActiveBoss: (b: ActiveEnemy | null) => void;
   remotePlayers: RemotePlayer[];
   lanternBrightness: 'normal' | 'bright' | 'max';
+  adminAction?: AdminCanvasAction | null;
 }
 
 export const GameCanvas: React.FC<GameCanvasProps> = ({
@@ -40,6 +81,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   setActiveBoss,
   remotePlayers,
   lanternBrightness,
+  adminAction,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -93,6 +135,58 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     activeEnemiesRef.current = spawned;
   }, [setActiveBoss]);
+
+  // Handle Admin Canvas Actions (cheat execution, enemy spawns, teleports)
+  const lastAdminActionId = useRef<number>(0);
+  useEffect(() => {
+    if (!adminAction || adminAction.id === lastAdminActionId.current) return;
+    lastAdminActionId.current = adminAction.id;
+
+    if (adminAction.type === 'kill_enemies') {
+      activeEnemiesRef.current = [];
+      enemyManager.clearProjectiles();
+      setActiveBoss(null);
+    } else if (adminAction.type === 'spawn_enemy') {
+      const type = adminAction.payload?.type || 'crawler';
+      const p = playerRef.current;
+      const spawnX = p.facing === 'right' ? p.x + 90 : p.x - 90;
+      const spawnY = p.y - 10;
+      const en = enemyManager.createEnemy(
+        `admin_${Date.now()}`,
+        type,
+        spawnX,
+        spawnY,
+        150
+      );
+      activeEnemiesRef.current.push(en);
+      if (en.isBoss) {
+        setActiveBoss(en);
+      }
+    } else if (adminAction.type === 'teleport') {
+      if (adminAction.payload) {
+        playerRef.current.x = adminAction.payload.x ?? 200;
+        playerRef.current.y = adminAction.payload.y ?? 500;
+        playerRef.current.vx = 0;
+        playerRef.current.vy = 0;
+      }
+    } else if (adminAction.type === 'heal_full') {
+      playerRef.current.hp = playerRef.current.maxHp;
+      onPlayerHUDUpdate({ ...playerRef.current });
+    } else if (adminAction.type === 'pulse_full') {
+      playerRef.current.pulse = playerRef.current.maxPulse;
+      onPlayerHUDUpdate({ ...playerRef.current });
+    } else if (adminAction.type === 'unlock_abilities') {
+      playerRef.current.abilities = {
+        dash: true,
+        doubleJump: true,
+        wallClimb: true,
+        groundPound: true,
+        rewind: true,
+        memoryVision: true,
+      };
+      onPlayerHUDUpdate({ ...playerRef.current });
+    }
+  }, [adminAction, setActiveBoss, onPlayerHUDUpdate]);
 
   // When current room changes
   useEffect(() => {
@@ -215,12 +309,33 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       const keys = keysRef.current;
       const input = inputStateRef.current;
 
-      input.left = Boolean(keys['KeyA'] || keys['ArrowLeft']);
-      input.right = Boolean(keys['KeyD'] || keys['ArrowRight']);
-      input.up = Boolean(keys['KeyW'] || keys['ArrowUp']);
-      input.down = Boolean(keys['KeyS'] || keys['ArrowDown']);
-      input.jump = Boolean(keys['Space'] || keys['KeyW'] || keys['ArrowUp']);
-      input.healHold = Boolean(keys['KeyF'] || keys['KeyE']);
+      input.left = Boolean(keys['KeyA'] || keys['ArrowLeft'] || mobileInputState.left);
+      input.right = Boolean(keys['KeyD'] || keys['ArrowRight'] || mobileInputState.right);
+      input.up = Boolean(keys['KeyW'] || keys['ArrowUp'] || mobileInputState.up);
+      input.down = Boolean(keys['KeyS'] || keys['ArrowDown'] || mobileInputState.down);
+      input.jump = Boolean(keys['Space'] || keys['KeyW'] || keys['ArrowUp'] || mobileInputState.jump);
+      input.healHold = Boolean(keys['KeyF'] || keys['KeyE'] || mobileInputState.healHold);
+
+      if (mobileInputState.jumpPressed) {
+        input.jumpPressed = true;
+        mobileInputState.jumpPressed = false;
+      }
+      if (mobileInputState.attackPressed) {
+        input.attackPressed = true;
+        mobileInputState.attackPressed = false;
+      }
+      if (mobileInputState.dashPressed) {
+        input.dashPressed = true;
+        mobileInputState.dashPressed = false;
+      }
+      if (mobileInputState.visionPressed) {
+        input.visionPressed = true;
+        mobileInputState.visionPressed = false;
+      }
+
+      if (mobileInputState.up) {
+        checkPlayerInteractions();
+      }
 
       const p = playerRef.current;
       const room = currentRoomRef.current;

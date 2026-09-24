@@ -107,7 +107,7 @@ export class GameRenderer {
     this.renderPlatforms(ctx, room.platforms, player.isMemoryVisionActive);
 
     // 3. Totems, Lore Tablets, NPCs, Collectibles
-    this.renderWorldObjects(ctx, room);
+    this.renderWorldObjects(ctx, room, player);
 
     // 4. Remote Players (Co-op Companions)
     for (const remote of remotePlayers) {
@@ -270,7 +270,7 @@ export class GameRenderer {
     }
   }
 
-  private renderWorldObjects(ctx: CanvasRenderingContext2D, room: GameRoom) {
+  private renderWorldObjects(ctx: CanvasRenderingContext2D, room: GameRoom, player?: PlayerState) {
     // Resting Totems
     for (const totem of room.totems) {
       ctx.save();
@@ -313,9 +313,45 @@ export class GameRenderer {
       ctx.restore();
     }
 
-    // NPCs
+    // NPCs (Com suporte a animações customizadas e interação)
+    const nowSec = Date.now() / 1000;
     for (const npc of room.npcs) {
       ctx.save();
+      const isPlayerNear =
+        player &&
+        Math.hypot(
+          player.x + player.width / 2 - (npc.x + 16),
+          player.y + player.height / 2 - (npc.y + 24)
+        ) < 85;
+
+      // Prioridade de sprite: interação ativa > sprite específico do NPC > interação perto > idle geral
+      const customNpcFrame =
+        (isPlayerNear && (player?.isTalking || player?.isInteracting) && spriteStore.getFrame('npc_interagir', nowSec)) ||
+        spriteStore.getFrame(`npc_${npc.id}`, nowSec) ||
+        (isPlayerNear && spriteStore.getFrame('npc_interagir', nowSec)) ||
+        spriteStore.getFrame('npc_idle', nowSec);
+
+      if (customNpcFrame) {
+        const drawW = 46;
+        const drawH = 56;
+        const bob = Math.sin(nowSec * 3) * 2;
+        ctx.drawImage(customNpcFrame, npc.x + 16 - drawW / 2, npc.y + 24 - drawH / 2 + bob, drawW, drawH);
+
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = 'bold 11px "Plus Jakarta Sans", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(npc.name, npc.x + 16, npc.y - 18);
+
+        if (isPlayerNear) {
+          ctx.fillStyle = '#72E7FE';
+          ctx.font = 'bold 10px "Plus Jakarta Sans", sans-serif';
+          ctx.fillText('💬 [W / ↑ / Toque] Conversar', npc.x + 16, npc.y - 6);
+        }
+        ctx.restore();
+        continue;
+      }
+
+      // Fallback procedural
       ctx.fillStyle = '#1e293b';
       ctx.fillRect(npc.x, npc.y + 10, 32, 44);
       ctx.fillStyle = '#334155';
@@ -960,8 +996,39 @@ export class GameRenderer {
   }
 
   private renderEnemies(ctx: CanvasRenderingContext2D, enemies: ActiveEnemy[]) {
+    const nowSec = Date.now() / 1000;
     for (const en of enemies) {
       ctx.save();
+
+      // Check custom enemy sprite
+      let enemyAnimKey = `enemy_${en.type}`;
+      if (en.type === 'varron_sentinel') enemyAnimKey = 'enemy_sentinel';
+      if (en.type === 'abyss_diver') enemyAnimKey = 'enemy_diver';
+      if (en.type === 'boss_guardian') enemyAnimKey = 'enemy_boss_guardian';
+      if (en.type === 'boss_shade') enemyAnimKey = 'enemy_boss_shade';
+
+      if (en.invulnerableTimer > 0 && spriteStore.hasFrames('enemy_dano')) {
+        enemyAnimKey = 'enemy_dano';
+      }
+
+      const customEnemyFrame = spriteStore.getFrame(enemyAnimKey, nowSec);
+      if (customEnemyFrame) {
+        const centerX = en.x + en.width / 2;
+        const centerY = en.y + en.height / 2;
+        ctx.translate(centerX, centerY);
+        if (en.facing === -1) {
+          ctx.scale(-1, 1);
+        }
+        if (en.invulnerableTimer > 0) {
+          ctx.filter = 'brightness(1.8) drop-shadow(0 0 8px #ef4444)';
+        }
+        const drawW = en.width * 1.35;
+        const drawH = en.height * 1.35;
+        ctx.drawImage(customEnemyFrame, -drawW / 2, -drawH / 2, drawW, drawH);
+        ctx.restore();
+        continue;
+      }
+
       if (en.invulnerableTimer > 0) {
         ctx.fillStyle = '#ef4444';
       }
@@ -1008,10 +1075,87 @@ export class GameRenderer {
         ctx.fillRect(en.x + en.width / 2 - 4, en.y + 8, 8, 3);
       } else if (en.type === 'boss_guardian') {
         this.renderGuardianBoss(ctx, en);
+      } else if (en.type === 'boss_varron_colossus') {
+        this.renderVarronBoss(ctx, en);
+      } else if (en.type === 'boss_shade') {
+        this.renderShadeBoss(ctx, en);
       }
 
       ctx.restore();
     }
+  }
+
+  private renderVarronBoss(ctx: CanvasRenderingContext2D, boss: ActiveEnemy) {
+    const centerX = boss.x + boss.width / 2;
+    // Massive bronze plated colossus
+    ctx.fillStyle = '#451a03';
+    ctx.fillRect(boss.x + 12, boss.y + 40, boss.width - 24, boss.height - 40);
+
+    // Copper armor plates
+    ctx.fillStyle = '#b45309';
+    ctx.fillRect(boss.x + 8, boss.y + 30, boss.width - 16, 50);
+
+    // Glowing molten furnace core
+    const pulse = Math.sin(Date.now() * 0.008) * 0.3 + 0.7;
+    ctx.fillStyle = `rgba(249, 115, 22, ${pulse})`;
+    ctx.beginPath();
+    ctx.arc(centerX, boss.y + 60, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Heavy steam chimney shoulders
+    ctx.fillStyle = '#78350f';
+    ctx.fillRect(boss.x, boss.y + 15, 20, 30);
+    ctx.fillRect(boss.x + boss.width - 20, boss.y + 15, 20, 30);
+
+    // Steam vents
+    ctx.fillStyle = 'rgba(255, 237, 213, 0.4)';
+    const steamY = Math.sin(Date.now() * 0.015) * 8;
+    ctx.beginPath();
+    ctx.arc(boss.x + 10, boss.y - 5 + steamY, 12, 0, Math.PI * 2);
+    ctx.arc(boss.x + boss.width - 10, boss.y - 5 + steamY, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Molten hammer
+    const hammerX = boss.facing === 1 ? boss.x + boss.width + 12 : boss.x - 24;
+    ctx.fillStyle = '#292524';
+    ctx.fillRect(hammerX + 8, boss.y - 20, 10, boss.height);
+    ctx.fillStyle = '#ea580c';
+    ctx.fillRect(hammerX - 10, boss.y - 35, 46, 30);
+  }
+
+  private renderShadeBoss(ctx: CanvasRenderingContext2D, boss: ActiveEnemy) {
+    const centerX = boss.x + boss.width / 2;
+    const time = Date.now() * 0.004;
+
+    // Dark void mist aura
+    ctx.fillStyle = 'rgba(88, 28, 135, 0.35)';
+    ctx.beginPath();
+    ctx.arc(centerX, boss.y + boss.height / 2, 65 + Math.sin(time * 3) * 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Somber shadow body
+    ctx.fillStyle = '#090514';
+    ctx.beginPath();
+    ctx.ellipse(centerX, boss.y + 55, boss.width / 2, boss.height / 2 - 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Purple ethereal horn mantle
+    ctx.strokeStyle = '#a855f7';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(centerX - 24, boss.y + 25);
+    ctx.quadraticCurveTo(centerX - 45, boss.y - 25, centerX - 15, boss.y - 35);
+    ctx.moveTo(centerX + 24, boss.y + 25);
+    ctx.quadraticCurveTo(centerX + 45, boss.y - 25, centerX + 15, boss.y - 35);
+    ctx.stroke();
+
+    // Twin piercing void eyes
+    ctx.fillStyle = boss.phase === 2 ? '#f43f5e' : '#c084fc';
+    const eyeOffset = boss.facing === 1 ? 6 : -6;
+    ctx.beginPath();
+    ctx.ellipse(centerX - 10 + eyeOffset, boss.y + 35, 5, 8, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(centerX + 10 + eyeOffset, boss.y + 35, 5, 8, -0.2, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   private renderGuardianBoss(ctx: CanvasRenderingContext2D, boss: ActiveEnemy) {
