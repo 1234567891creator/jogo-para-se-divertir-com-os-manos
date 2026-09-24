@@ -871,6 +871,19 @@ export class GameRenderer {
       this.renderSlash(ctx, slash);
     }
 
+    // Floating Player Name Tag above head (online / local)
+    const localName = player.name || 'Nox';
+    this.renderPlayerNameTag(
+      ctx,
+      centerX,
+      player.y - 32,
+      localName,
+      '#38bdf8',
+      true,
+      player.hp,
+      player.maxHp
+    );
+
     ctx.restore();
   }
 
@@ -956,41 +969,175 @@ export class GameRenderer {
 
   private renderRemoteWanderer(ctx: CanvasRenderingContext2D, remote: RemotePlayer) {
     ctx.save();
-    const colors = ['#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+    const colors = ['#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
     const cloakColor = colors[remote.colorIndex % colors.length];
+    const centerX = remote.x + 14;
+    const isRight = remote.facing === 'right';
 
     if (remote.isDowned) {
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.35)';
       ctx.beginPath();
-      ctx.arc(remote.x + 16, remote.y + 20, 24, 0, Math.PI * 2);
+      ctx.arc(centerX, remote.y + 24, 26, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = '#f87171';
       ctx.font = 'bold 11px "Plus Jakarta Sans", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('[E] Reanimar', remote.x + 16, remote.y - 12);
+      ctx.fillText('[E] Reanimar', centerX, remote.y - 42);
     }
 
-    // Cloak
+    // 1. Flowing Cloak
     ctx.fillStyle = cloakColor;
-    ctx.fillRect(remote.x + 6, remote.y + 16, 20, 24);
-
-    // Mask
-    ctx.fillStyle = '#EDE3E2';
     ctx.beginPath();
-    ctx.arc(remote.x + 16, remote.y + 14, 10, 0, Math.PI * 2);
+    ctx.moveTo(centerX, remote.y + 16);
+    ctx.lineTo(centerX + (isRight ? -16 : 16), remote.y + 42);
+    ctx.lineTo(centerX + (isRight ? 14 : -14), remote.y + 42);
+    ctx.closePath();
     ctx.fill();
 
-    // Eyes
-    ctx.fillStyle = '#72E7FE';
-    ctx.fillRect(remote.x + 12, remote.y + 12, 3, 4);
-    ctx.fillRect(remote.x + 18, remote.y + 12, 3, 4);
+    // 2. Porcelain Horns
+    ctx.fillStyle = '#EDE3E2';
+    // Left horn
+    ctx.beginPath();
+    ctx.moveTo(centerX - 6, remote.y + 10);
+    ctx.quadraticCurveTo(centerX - 13, remote.y - 4, centerX - 9, remote.y - 14);
+    ctx.quadraticCurveTo(centerX - 4, remote.y - 6, centerX - 2, remote.y + 8);
+    ctx.closePath();
+    ctx.fill();
+    // Right horn
+    ctx.beginPath();
+    ctx.moveTo(centerX + 2, remote.y + 8);
+    ctx.quadraticCurveTo(centerX + 5, remote.y - 4, centerX + 10, remote.y - 11);
+    ctx.quadraticCurveTo(centerX + 11, remote.y - 3, centerX + 6, remote.y + 10);
+    ctx.closePath();
+    ctx.fill();
 
-    // Remote username
-    ctx.fillStyle = '#e2e8f0';
-    ctx.font = '11px "Plus Jakarta Sans", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(remote.name, remote.x + 16, remote.y - 4);
+    // 3. Porcelain Mask
+    ctx.fillStyle = '#EDE3E2';
+    ctx.beginPath();
+    ctx.ellipse(centerX, remote.y + 14, 11, 13, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Glowing Cyan Eyes
+    ctx.fillStyle = '#0a0d14';
+    ctx.beginPath();
+    ctx.ellipse(centerX - 3.5, remote.y + 14, 2.5, 3.8, 0, 0, Math.PI * 2);
+    ctx.ellipse(centerX + 3.5, remote.y + 14, 2.5, 3.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#72E7FE';
+    ctx.beginPath();
+    ctx.ellipse(centerX - 3.5, remote.y + 14, 1.8, 2.8, 0, 0, Math.PI * 2);
+    ctx.ellipse(centerX + 3.5, remote.y + 14, 1.8, 2.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 5. Blade
+    ctx.save();
+    ctx.translate(centerX + (isRight ? 12 : -12), remote.y + 26);
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(isRight ? 16 : -16, 6);
+    ctx.stroke();
+    ctx.restore();
+
+    // 6. Floating Name Tag above head
+    this.renderPlayerNameTag(
+      ctx,
+      centerX,
+      remote.y - 32,
+      remote.name,
+      cloakColor,
+      false,
+      remote.hp,
+      remote.maxHp,
+      remote.isDowned
+    );
+
+    // 7. Emote Bubble
+    if (remote.lastEmote && remote.lastEmote.timer > 0) {
+      const bubbleY = remote.y - 58;
+      ctx.font = 'bold 12px "Plus Jakarta Sans", sans-serif';
+      const bubbleText = remote.lastEmote.text;
+      const bWidth = ctx.measureText(bubbleText).width + 16;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      ctx.beginPath();
+      ctx.roundRect(centerX - bWidth / 2, bubbleY - 14, bWidth, 24, 8);
+      ctx.fill();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(bubbleText, centerX, bubbleY - 2);
+    }
+
+    ctx.restore();
+  }
+
+  public renderPlayerNameTag(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    name: string,
+    accentColor: string,
+    isLocal: boolean,
+    hp: number,
+    maxHp: number,
+    isDowned: boolean = false
+  ) {
+    ctx.save();
+    ctx.font = 'bold 11px "Plus Jakarta Sans", sans-serif';
+    const tagText = isLocal ? `${name} (Você)` : name;
+    const textWidth = ctx.measureText(tagText).width;
+    const paddingX = 8;
+    const tagW = Math.max(textWidth + paddingX * 2, 46);
+    const tagH = 19;
+    const tagX = x - tagW / 2;
+    const tagY = y;
+
+    // Background pill
+    ctx.fillStyle = isDowned ? 'rgba(153, 27, 27, 0.92)' : 'rgba(8, 12, 20, 0.88)';
+    ctx.beginPath();
+    ctx.roundRect(tagX, tagY, tagW, tagH, 6);
+    ctx.fill();
+
+    // Accent border
+    ctx.strokeStyle = isDowned ? '#ef4444' : accentColor;
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+
+    // Status dot
+    const dotX = tagX + 7;
+    const dotY = tagY + tagH / 2;
+    ctx.fillStyle = isDowned ? '#f87171' : accentColor;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Name text
+    ctx.fillStyle = isDowned ? '#fecaca' : '#f1f5f9';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(tagText, tagX + 14, dotY);
+
+    // Mini HP pips below tag
+    if (maxHp > 0) {
+      const pipW = 4;
+      const pipH = 2.5;
+      const gap = 2;
+      const totalPipsW = maxHp * pipW + (maxHp - 1) * gap;
+      const pipsStartX = x - totalPipsW / 2;
+      const pipsY = tagY + tagH + 2;
+
+      for (let i = 0; i < maxHp; i++) {
+        ctx.fillStyle = i < hp ? (isDowned ? '#ef4444' : accentColor) : 'rgba(71, 85, 105, 0.6)';
+        ctx.fillRect(pipsStartX + i * (pipW + gap), pipsY, pipW, pipH);
+      }
+    }
 
     ctx.restore();
   }

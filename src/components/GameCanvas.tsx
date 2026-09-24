@@ -7,6 +7,7 @@ import {
   LoreTablet,
   NPC,
   RemotePlayer,
+  SavePoint,
 } from '../game/types';
 import { GAME_ROOMS } from '../game/worldMap';
 import { physicsEngine, InputState, checkAABB } from '../game/physics';
@@ -68,6 +69,8 @@ interface GameCanvasProps {
   remotePlayers: RemotePlayer[];
   lanternBrightness: 'normal' | 'bright' | 'max';
   adminAction?: AdminCanvasAction | null;
+  activeSavePoint?: SavePoint | null;
+  onSaveCheckpoint?: (sp: SavePoint) => void;
 }
 
 export const GameCanvas: React.FC<GameCanvasProps> = ({
@@ -82,6 +85,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   remotePlayers,
   lanternBrightness,
   adminAction,
+  activeSavePoint,
+  onSaveCheckpoint,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -92,10 +97,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   });
 
   playerRef.current.lanternBrightness = lanternBrightness;
+  playerRef.current.name = initialPlayer.name;
 
-  // Stable references for rooms and external state
+  // Stable references for rooms, savepoints, and external state
   const currentRoomRef = useRef<GameRoom>(currentRoom);
   currentRoomRef.current = currentRoom;
+
+  const activeSavePointRef = useRef<SavePoint | null>(activeSavePoint || null);
+  activeSavePointRef.current = activeSavePoint || null;
 
   const remotePlayersRef = useRef<RemotePlayer[]>(remotePlayers);
   remotePlayersRef.current = remotePlayers;
@@ -289,6 +298,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         p.interactionTimer = 0.8;
         physicsEngine.screenShake = 8;
         soundEngine.playTotemRest();
+
+        const sp: SavePoint = {
+          id: totem.id,
+          roomId: room.id,
+          roomName: room.name,
+          x: totem.x + 20,
+          y: totem.y - 10,
+          name: totem.name,
+          activated: true,
+          timestamp: Date.now(),
+        };
+
+        try {
+          localStorage.setItem('echoward_saved_checkpoint', JSON.stringify(sp));
+        } catch {}
+
+        if (onSaveCheckpoint) {
+          onSaveCheckpoint(sp);
+        }
+        activeSavePointRef.current = sp;
+
         onPlayerHUDUpdate({ ...p });
         return;
       }
@@ -346,13 +376,33 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       };
 
       const onRespawn = () => {
-        // Respawn Nox at room start
-        p.x = 200;
-        p.y = 520;
+        soundEngine.playTotemRest();
+        physicsEngine.screenShake = 12;
+        p.hp = p.maxHp;
+        p.pulse = p.maxPulse;
         p.vx = 0;
         p.vy = 0;
-        soundEngine.playTotemRest();
-        physicsEngine.screenShake = 10;
+
+        let targetSpawnX = 200;
+        let targetSpawnY = 520;
+        let targetRoom = room;
+
+        if (activeSavePointRef.current) {
+          const sp = activeSavePointRef.current;
+          const foundRoom = GAME_ROOMS[sp.roomId];
+          if (foundRoom) {
+            targetRoom = foundRoom;
+            targetSpawnX = sp.x;
+            targetSpawnY = sp.y;
+          }
+        }
+
+        p.x = targetSpawnX;
+        p.y = targetSpawnY;
+
+        if (targetRoom.id !== currentRoomRef.current.id) {
+          setCurrentRoom(targetRoom);
+        }
         onPlayerHUDUpdate({ ...p });
       };
 
@@ -437,9 +487,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         multiplayerClient.sendPlayerSync(p, room.id);
       }
 
-      // 7. Update HUD state throttled (every 100ms)
+      // 7. Update HUD & Mini-Map state throttled (every 50ms / 20 FPS)
       hudThrottleTimer += dt;
-      if (hudThrottleTimer >= 0.1) {
+      if (hudThrottleTimer >= 0.05) {
         hudThrottleTimer = 0;
         onPlayerHUDUpdate({ ...p });
       }
@@ -452,11 +502,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       input.rewindPressed = false;
       input.visionPressed = false;
 
-      // 8. Render Frame to Canvas
+      // 8. Render Frame to Canvas - Only players inside this room appear
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
+          const roomPlayers = remotePlayersRef.current.filter(
+            (rp) => rp.currentRoomId === room.id && typeof rp.x === 'number' && typeof rp.y === 'number'
+          );
           gameRenderer.render(
             ctx,
             canvas.width,
@@ -466,7 +519,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             activeEnemiesRef.current,
             enemyManager.projectiles,
             physicsEngine.activeSlash,
-            remotePlayersRef.current,
+            roomPlayers,
             physicsEngine.screenShake,
             dt
           );

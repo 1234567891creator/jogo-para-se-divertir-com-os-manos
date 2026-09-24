@@ -20,6 +20,7 @@ interface ConnectedClient {
   name: string;
   roomId: string;
   colorIndex: number;
+  lastState?: any;
 }
 
 const clients = new Map<WebSocket, ConnectedClient>();
@@ -112,17 +113,105 @@ app.post('/api/rooms/join', (req, res) => {
   });
 });
 
+// Dual-layer HTTP sync endpoint for instant state exchange and fallback
+interface HttpSyncedPlayer {
+  id: string;
+  name: string;
+  colorIndex: number;
+  roomId: string;
+  lastSeen: number;
+  state: any;
+}
+const httpPlayers = new Map<string, HttpSyncedPlayer>();
+
+// Clean up stale HTTP players periodically (idle > 3 seconds)
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, p] of httpPlayers.entries()) {
+    if (now - p.lastSeen > 3000) {
+      httpPlayers.delete(id);
+    }
+  }
+}, 2000);
+
+app.post('/api/rooms/sync', (req, res) => {
+  const { roomId, playerId, name, colorIndex, state } = req.body || {};
+  const cleanRoom = (roomId || 'LUMEN').trim().toUpperCase();
+  const cleanId = playerId || 'anon_' + Math.random().toString(36).substring(2, 7);
+
+  if (state) {
+    httpPlayers.set(cleanId, {
+      id: cleanId,
+      name: (name || 'Nox').substring(0, 16),
+      colorIndex: typeof colorIndex === 'number' ? colorIndex : 0,
+      roomId: cleanRoom,
+      lastSeen: Date.now(),
+      state,
+    });
+  }
+
+  // Gather all other active players in this room (both from WS and HTTP)
+  const roomRemotePlayers: any[] = [];
+  const seenIds = new Set<string>();
+
+  // 1. From WebSocket clients
+  const wsRoom = rooms.get(cleanRoom);
+  if (wsRoom) {
+    for (const ws of wsRoom) {
+      const c = clients.get(ws);
+      if (c && c.id !== cleanId && c.lastState) {
+        seenIds.add(c.id);
+        roomRemotePlayers.push({
+          id: c.id,
+          name: c.name,
+          colorIndex: c.colorIndex,
+          ...c.lastState,
+        });
+      }
+    }
+  }
+
+  // 2. From HTTP players
+  for (const [hpId, hp] of httpPlayers.entries()) {
+    if (hpId !== cleanId && hp.roomId === cleanRoom && !seenIds.has(hpId)) {
+      roomRemotePlayers.push({
+        id: hp.id,
+        name: hp.name,
+        colorIndex: hp.colorIndex,
+        ...hp.state,
+      });
+    }
+  }
+
+  res.json({
+    success: true,
+    roomId: cleanRoom,
+    players: roomRemotePlayers,
+  });
+});
+
 // Realtime Multiplayer WebSocket Server
 const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (request, socket, head) => {
-  const { pathname } = new URL(request.url || '', `http://${request.headers.host}`);
-  if (pathname === '/ws') {
+  const url = request.url || '';
+  if (url === '/ws' || url.startsWith('/ws?') || url.startsWith('/ws/')) {
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request);
     });
   }
 });
+
+// Periodic ping to keep all WebSocket connections alive through proxies
+const heartbeatInterval = setInterval(() => {
+  for (const clientWs of clients.keys()) {
+    if (clientWs.readyState === WebSocket.OPEN) {
+      clientWs.ping();
+    }
+  }
+}, 20000);
+
+heartbeatInterval.unref();
 
 wss.on('connection', (ws: WebSocket) => {
   const clientId = 'wanderer_' + Math.random().toString(36).substring(2, 8);
@@ -161,12 +250,12 @@ wss.on('connection', (ws: WebSocket) => {
         rooms.get(roomId)!.add(ws);
 
         // Collect existing players in the room to send to this newcomer!
-        const existingPlayers: Array<{ id: string; name: string; colorIndex: number }> = [];
+        const existingPlayers: Array<{ id: string; name: string; colorIndex: number; lastState?: any }> = [];
         for (const otherWs of rooms.get(roomId)!) {
           if (otherWs !== ws) {
             const oc = clients.get(otherWs);
-            if (oc) {
-              existingPlayers.push({ id: oc.id, name: oc.name, colorIndex: oc.colorIndex });
+            if (oc && oc.lastState && oc.lastState.currentRoomId) {
+              existingPlayers.push({ id: oc.id, name: oc.name, colorIndex: oc.colorIndex, lastState: oc.lastState });
             }
           }
         }
@@ -194,6 +283,9 @@ wss.on('connection', (ws: WebSocket) => {
           data.fromId = client.id;
           data.name = client.name;
           data.colorIndex = client.colorIndex;
+          if (data.type === 'sync') {
+            client.lastState = data;
+          }
           broadcastToRoom(client.roomId, data, ws);
         }
       }

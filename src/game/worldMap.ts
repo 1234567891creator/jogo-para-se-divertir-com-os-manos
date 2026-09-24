@@ -1145,7 +1145,16 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
         author: 'Último Arauto',
       },
     ],
-    totems: [],
+    totems: [
+      {
+        id: 'totem_abyss_chasm',
+        x: 200,
+        y: 790,
+        name: 'Totem do Limiar das Sombras',
+        activated: false,
+        isSavePoint: true,
+      },
+    ],
     npcs: [],
     collectibles: [
       {

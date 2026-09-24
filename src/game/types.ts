@@ -39,6 +39,7 @@ export interface PlayerAbilities {
 }
 
 export interface PlayerState {
+  name?: string;
   x: number;
   y: number;
   vx: number;
@@ -122,6 +123,18 @@ export interface RestingTotem {
   y: number;
   name: string;
   activated: boolean;
+  isSavePoint?: boolean;
+}
+
+export interface SavePoint {
+  id: string;
+  roomId: string;
+  roomName: string;
+  x: number;
+  y: number;
+  name: string;
+  activated: boolean;
+  timestamp?: number;
 }
 
 export interface NPC {
@@ -266,6 +279,8 @@ export interface RemotePlayer {
   isDowned: boolean;
   colorIndex: number;
   currentRoomId: string;
+  currentAnimation?: string;
   maskCracks: MaskCrackStage;
   lastEmote?: { text: string; timer: number };
+  lastSeen?: number;
 }

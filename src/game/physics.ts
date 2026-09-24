@@ -127,6 +127,18 @@ export class PhysicsEngine {
       return;
     }
 
+    // Void / Pit fall recovery
+    if (player.y > 1300 && !player.isDying) {
+      player.hp = 0;
+      player.isDying = true;
+      player.deathTimer = 0;
+      player.currentAnimation = 'morrer';
+      player.vx = 0;
+      this.screenShake = 15;
+      soundEngine.playDamage();
+      return;
+    }
+
     // Decrement landing timer
     if (player.landingTimer > 0) {
       player.landingTimer -= dt;
@@ -434,34 +446,33 @@ export class PhysicsEngine {
   ) {
     const wasInAir = !player.isGrounded;
     const prevVy = player.vy;
+    const prevY = player.y;
 
     player.isGrounded = false;
     player.isWallSliding = false;
 
-    // Move X first
+    // 1. Move X first with vertical inset to NEVER collide with floor or ceiling
     player.x += player.vx * dt;
+    const insetY = player.y + 6;
+    const insetH = Math.max(10, player.height - 12);
     const playerRectX: Rect = {
       x: player.x,
-      y: player.y,
+      y: insetY,
       width: player.width,
-      height: player.height,
+      height: insetH,
     };
 
     for (const plat of platforms) {
-      if (plat.type === 'resonance_barrier' && player.isDashing) {
-        continue;
-      }
-      if (plat.type === 'spike') {
-        continue;
-      }
+      if (plat.type === 'resonance_barrier' && player.isDashing) continue;
+      if (plat.type === 'spike') continue;
 
-      if (checkAABB(playerRectX, plat)) {
-        if (
-          plat.type === 'solid' ||
-          plat.type === 'fragile' ||
-          plat.type === 'wall_climbable' ||
-          plat.type === 'resonance_barrier'
-        ) {
+      if (
+        plat.type === 'solid' ||
+        plat.type === 'fragile' ||
+        plat.type === 'wall_climbable' ||
+        plat.type === 'resonance_barrier'
+      ) {
+        if (checkAABB(playerRectX, plat)) {
           if (player.vx > 0) {
             player.x = plat.x - player.width;
             if (plat.type === 'wall_climbable' || player.abilities.wallClimb) {
@@ -478,94 +489,129 @@ export class PhysicsEngine {
               this.lastWallDirection = -1;
               this.wallSlideGraceTimer = 0.16;
             }
-          } else {
-            // Push-out along smallest overlap
-            const overlapLeft = player.x + player.width - plat.x;
-            const overlapRight = plat.x + plat.width - player.x;
-            if (overlapLeft < overlapRight) {
-              player.x = plat.x - player.width;
-              if (player.abilities.wallClimb) {
-                player.isWallSliding = true;
-                player.wallDirection = 1;
-                this.lastWallDirection = 1;
-                this.wallSlideGraceTimer = 0.16;
-              }
-            } else {
-              player.x = plat.x + plat.width;
-              if (player.abilities.wallClimb) {
-                player.isWallSliding = true;
-                player.wallDirection = -1;
-                this.lastWallDirection = -1;
-                this.wallSlideGraceTimer = 0.16;
-              }
-            }
           }
           player.vx = 0;
         }
       }
     }
 
-    // Move Y
-    player.y += player.vy * dt;
-    const playerRectY: Rect = {
-      x: player.x,
-      y: player.y,
-      width: player.width,
-      height: player.height,
-    };
+    // 2. Move Y with continuous / swept step to prevent falling through the ground
+    const totalDeltaY = player.vy * dt;
+    const steps = Math.max(1, Math.ceil(Math.abs(totalDeltaY) / 10));
+    const stepDeltaY = totalDeltaY / steps;
 
-    for (const plat of platforms) {
-      if (plat.type === 'resonance_barrier' && player.isDashing) {
-        continue;
-      }
-      if (plat.type === 'spike') {
-        if (checkAABB(playerRectY, plat) && player.invulnerableTimer <= 0 && !player.isDashing) {
-          player.hp = Math.max(0, player.hp - 1);
-          player.vy = -380;
-          player.invulnerableTimer = 1.0;
-          soundEngine.playDamage();
-          this.screenShake = 10;
-        }
-        continue;
-      }
+    for (let step = 0; step < steps; step++) {
+      player.y += stepDeltaY;
 
-      if (checkAABB(playerRectY, plat)) {
-        if (plat.type === 'bouncy_mushroom') {
-          player.vy = POGO_FORCE;
-          this.canDoubleJump = true;
-          player.dashCooldown = 0;
-          soundEngine.playPogo();
+      const playerRectY: Rect = {
+        x: player.x + 2,
+        y: player.y,
+        width: player.width - 4,
+        height: player.height,
+      };
+
+      for (const plat of platforms) {
+        if (plat.type === 'resonance_barrier' && player.isDashing) continue;
+
+        if (plat.type === 'spike') {
+          if (checkAABB(playerRectY, plat) && player.invulnerableTimer <= 0 && !player.isDashing) {
+            player.hp = Math.max(0, player.hp - 1);
+            player.vy = -380;
+            player.invulnerableTimer = 1.0;
+            soundEngine.playDamage();
+            this.screenShake = 10;
+          }
           continue;
         }
 
-        if (
-          plat.type === 'solid' ||
-          plat.type === 'fragile' ||
-          plat.type === 'wall_climbable' ||
-          plat.type === 'resonance_barrier'
-        ) {
-          if (player.vy > 0) {
-            player.y = plat.y - player.height;
-            player.vy = 0;
-            player.isGrounded = true;
-            this.canDoubleJump = true; // reset double jump on ground
-
-            if (wasInAir && prevVy > 40) {
-              player.landingTimer = 0.18;
-            }
-
-            if (player.isGroundPounding) {
-              player.isGroundPounding = false;
-              this.screenShake = 18;
-              soundEngine.playHit();
-              if (plat.type === 'fragile' && onBreakFragileFloor) {
-                onBreakFragileFloor(plat);
-              }
-            }
-          } else if (player.vy < 0) {
-            player.y = plat.y + plat.height;
-            player.vy = 0;
+        if (checkAABB(playerRectY, plat)) {
+          if (plat.type === 'bouncy_mushroom') {
+            player.vy = POGO_FORCE;
+            this.canDoubleJump = true;
+            player.dashCooldown = 0;
+            soundEngine.playPogo();
+            continue;
           }
+
+          if (
+            plat.type === 'solid' ||
+            plat.type === 'fragile' ||
+            plat.type === 'wall_climbable' ||
+            plat.type === 'resonance_barrier'
+          ) {
+            // Downward collision (landing on ground)
+            if (player.vy >= 0) {
+              player.y = plat.y - player.height;
+              player.vy = 0;
+              player.isGrounded = true;
+              this.canDoubleJump = true;
+
+              if (wasInAir && prevVy > 40) {
+                player.landingTimer = 0.18;
+              }
+
+              if (player.isGroundPounding) {
+                player.isGroundPounding = false;
+                this.screenShake = 18;
+                soundEngine.playHit();
+                if (plat.type === 'fragile' && onBreakFragileFloor) {
+                  onBreakFragileFloor(plat);
+                }
+              }
+              break;
+            } else if (player.vy < 0) {
+              // Upward collision (hitting ceiling)
+              player.y = plat.y + plat.height;
+              player.vy = 0;
+              break;
+            }
+          }
+        }
+      }
+
+      if (player.isGrounded) break;
+    }
+
+    // 3. Ground penetration safety pass (De-penetration recovery)
+    // If player is somehow inside any solid block, push them up to the top surface!
+    const testBox: Rect = {
+      x: player.x + 3,
+      y: player.y + 4,
+      width: player.width - 6,
+      height: player.height - 6,
+    };
+    for (const plat of platforms) {
+      if (
+        (plat.type === 'solid' || plat.type === 'fragile') &&
+        checkAABB(testBox, plat)
+      ) {
+        // Player is penetrating ground; push safely to platform surface
+        player.y = plat.y - player.height;
+        player.vy = 0;
+        player.isGrounded = true;
+        this.canDoubleJump = true;
+        break;
+      }
+    }
+
+    // 4. Ground stability check (if standing right on top of a platform)
+    if (!player.isGrounded) {
+      const feetBox: Rect = {
+        x: player.x + 4,
+        y: player.y + player.height - 1,
+        width: player.width - 8,
+        height: 4,
+      };
+      for (const plat of platforms) {
+        if (
+          (plat.type === 'solid' || plat.type === 'fragile') &&
+          checkAABB(feetBox, plat)
+        ) {
+          player.y = plat.y - player.height;
+          player.vy = 0;
+          player.isGrounded = true;
+          this.canDoubleJump = true;
+          break;
         }
       }
     }

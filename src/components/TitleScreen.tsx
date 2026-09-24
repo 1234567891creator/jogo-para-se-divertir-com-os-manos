@@ -1,12 +1,15 @@
 import React from 'react';
-import { Play, Users, BookOpen, Compass, Sparkles, Volume2 } from 'lucide-react';
+import { Play, Users, BookOpen, Compass, Sparkles, Volume2, Bookmark } from 'lucide-react';
 import { soundEngine } from '../game/audio';
+import { SavePoint } from '../game/types';
 
 interface TitleScreenProps {
   onStartGame: () => void;
   onOpenMultiplayer: () => void;
   onOpenLore: () => void;
   onOpenMap: () => void;
+  savedCheckpoint?: SavePoint | null;
+  onContinueSavedGame?: () => void;
 }
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
@@ -14,11 +17,23 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onOpenMultiplayer,
   onOpenLore,
   onOpenMap,
+  savedCheckpoint,
+  onContinueSavedGame,
 }) => {
   const handleStart = () => {
     soundEngine.init();
     soundEngine.playJump();
     onStartGame();
+  };
+
+  const handleContinue = () => {
+    soundEngine.init();
+    soundEngine.playTotemRest();
+    if (onContinueSavedGame) {
+      onContinueSavedGame();
+    } else {
+      onStartGame();
+    }
   };
 
   return (
@@ -57,30 +72,51 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           <div className="h-[1px] w-12 bg-gradient-to-l from-transparent to-cyan-500" />
         </div>
         <p className="mt-4 max-w-md text-xs md:text-sm text-slate-300/90 leading-relaxed italic">
-          “O Silêncio devorou as vozes do mundo antigo. Desperte sua máscara, empunhe a Lâmina de Eco e desça às doze regiões do reino esquecido.”
+          “O Silêncio devorou as vozes do mundo antigo. Desperte sua máscara, empunhe a Lâmina de Eco e desça às dezenove fases do reino esquecido.”
         </p>
       </div>
 
       {/* Menu Actions */}
-      <div className="relative z-10 flex flex-col sm:flex-row items-center gap-3 w-full max-w-md">
-        <button
-          onClick={handleStart}
-          className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-sky-500 py-3.5 px-6 font-display text-sm font-bold tracking-wider text-white shadow-xl shadow-cyan-900/40 hover:from-cyan-500 hover:to-sky-400 hover:shadow-cyan-800/60 transition-all duration-200"
-        >
-          <Play className="h-4 w-4 fill-current transition-transform group-hover:scale-110" />
-          Despertar em Lumen
-        </button>
+      <div className="relative z-10 flex flex-col items-center gap-3 w-full max-w-md">
+        {savedCheckpoint && (
+          <button
+            onClick={handleContinue}
+            className="group flex w-full items-center justify-between gap-3 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 py-3.5 px-6 font-display text-sm font-bold tracking-wider text-white shadow-xl shadow-emerald-950/60 hover:from-emerald-500 hover:to-cyan-500 hover:scale-[1.02] transition-all duration-200"
+          >
+            <div className="flex items-center gap-2.5">
+              <Bookmark className="h-4 w-4 text-emerald-200 fill-emerald-400" />
+              <span>Continuar do Totem</span>
+            </div>
+            <span className="text-[11px] font-normal text-emerald-100 truncate max-w-[180px]">
+              {savedCheckpoint.name}
+            </span>
+          </button>
+        )}
 
-        <button
-          onClick={() => {
-            soundEngine.init();
-            onOpenMultiplayer();
-          }}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900/80 py-3.5 px-5 font-display text-sm font-semibold tracking-wider text-slate-200 backdrop-blur-md hover:border-cyan-500 hover:bg-slate-800 transition-all duration-200"
-        >
-          <Users className="h-4 w-4 text-cyan-400" />
-          Co-op Online (1–4)
-        </button>
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+          <button
+            onClick={handleStart}
+            className={`group flex flex-1 w-full items-center justify-center gap-2 rounded-xl py-3 px-5 font-display text-sm font-bold tracking-wider text-white shadow-lg transition-all duration-200 ${
+              savedCheckpoint
+                ? 'bg-slate-800/90 hover:bg-slate-700 border border-slate-700'
+                : 'bg-gradient-to-r from-cyan-600 to-sky-500 shadow-cyan-900/40 hover:from-cyan-500 hover:to-sky-400'
+            }`}
+          >
+            <Play className="h-4 w-4 fill-current transition-transform group-hover:scale-110" />
+            {savedCheckpoint ? 'Novo Jogo (Lumen)' : 'Despertar em Lumen'}
+          </button>
+
+          <button
+            onClick={() => {
+              soundEngine.init();
+              onOpenMultiplayer();
+            }}
+            className="flex flex-1 w-full items-center justify-center gap-2 rounded-xl border border-cyan-800/60 bg-slate-900/80 py-3 px-5 font-display text-sm font-semibold tracking-wider text-slate-200 backdrop-blur-md hover:border-cyan-400 hover:bg-slate-800 transition-all duration-200"
+          >
+            <Users className="h-4 w-4 text-cyan-400" />
+            Co-op Online (1–4)
+          </button>
+        </div>
       </div>
 
       {/* Secondary Quick Navs */}

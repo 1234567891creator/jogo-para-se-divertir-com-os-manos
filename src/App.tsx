@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { PlayerState, GameRoom, ActiveEnemy, NPC, LoreTablet, RemotePlayer } from './game/types';
+import { PlayerState, GameRoom, ActiveEnemy, NPC, LoreTablet, RemotePlayer, SavePoint } from './game/types';
 import { GAME_ROOMS } from './game/worldMap';
 import { GameCanvas, setMobileInput, AdminCanvasAction } from './components/GameCanvas';
 import { HUD } from './components/HUD';
@@ -128,10 +128,46 @@ export default function App() {
   // Secret code 847717 buffer
   const codeBufferRef = useRef<string>('');
 
-  // Multiplayer Room State
-  const [roomCode, setRoomCode] = useState('LUMEN');
-  const [playerName, setPlayerName] = useState('Nox');
-  const [colorIndex, setColorIndex] = useState(0);
+  // Active Save Point & Checkpoint system
+  const [activeSavePoint, setActiveSavePoint] = useState<SavePoint | null>(() => {
+    try {
+      const saved = localStorage.getItem('echoward_saved_checkpoint');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Multiplayer Room State (unique session code by default to prevent stranger clone clutter)
+  const [roomCode, setRoomCode] = useState(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlRoom = urlParams.get('room');
+      if (urlRoom) return urlRoom.trim().toUpperCase();
+      const saved = localStorage.getItem('echoward_room_code');
+      if (saved) return saved;
+    } catch {}
+    const defaultCode = 'SALA-' + Math.floor(100 + Math.random() * 900);
+    try {
+      localStorage.setItem('echoward_room_code', defaultCode);
+    } catch {}
+    return defaultCode;
+  });
+  const [playerName, setPlayerName] = useState(() => {
+    try {
+      return localStorage.getItem('echoward_player_name') || 'Nox';
+    } catch {
+      return 'Nox';
+    }
+  });
+  const [colorIndex, setColorIndex] = useState(() => {
+    try {
+      const s = localStorage.getItem('echoward_color_index');
+      return s ? parseInt(s, 10) || 0 : 0;
+    } catch {
+      return 0;
+    }
+  });
   const [remotePlayers, setRemotePlayers] = useState<RemotePlayer[]>([]);
   const [isConnected, setIsConnected] = useState(false);
 
@@ -198,6 +234,17 @@ export default function App() {
         setShowLore((v) => !v);
       } else if (e.code === 'KeyP') {
         setShowMultiplayer((v) => !v);
+      } else if (e.code === 'KeyT') {
+        const remotes = multiplayerClient.getRemotePlayersArray();
+        if (remotes.length > 0) {
+          const comp = remotes[0];
+          const targetRoom = GAME_ROOMS[comp.currentRoomId];
+          if (targetRoom) {
+            handleTeleportRoom(targetRoom, comp.x, comp.y);
+            setAbilityToast(`✨ Teleportado para o companheiro ${comp.name}!`);
+            setTimeout(() => setAbilityToast(null), 3000);
+          }
+        }
       } else if (e.code === 'KeyI') {
         setShowSpriteManager((v) => !v);
       } else if (e.code === 'Slash' || e.code === 'KeyH') {
@@ -263,10 +310,40 @@ export default function App() {
     }, 4500);
   };
 
-  const handleStartGame = () => {
+  const handleStartGame = (fromSavePoint: boolean = false) => {
+    let startingRoom = currentRoom;
+    let spawnX = 200;
+    let spawnY = 520;
+
+    if (fromSavePoint && activeSavePoint) {
+      const foundRoom = GAME_ROOMS[activeSavePoint.roomId];
+      if (foundRoom) {
+        startingRoom = foundRoom;
+        spawnX = activeSavePoint.x;
+        spawnY = activeSavePoint.y;
+      }
+    }
+
+    setCurrentRoom(startingRoom);
+    setPlayer((prev) => ({
+      ...prev,
+      name: playerName,
+      x: spawnX,
+      y: spawnY,
+      vx: 0,
+      vy: 0,
+      hp: prev.maxHp,
+      pulse: prev.maxPulse,
+    }));
     setGameState('PLAYING');
     soundEngine.playTotemRest();
-    soundEngine.startAmbientMusic(currentRoom.regionId);
+    soundEngine.startAmbientMusic(startingRoom.regionId);
+  };
+
+  const handleSaveCheckpoint = (sp: SavePoint) => {
+    setActiveSavePoint(sp);
+    setAbilityToast(`✨ PONTO DE SALVAMENTO ATIVADO: ${sp.name}! (Progresso Salvo)`);
+    setTimeout(() => setAbilityToast(null), 3500);
   };
 
   const handleSendEmote = (text: string) => {
@@ -276,13 +353,18 @@ export default function App() {
   const handleUpdatePlayer = (newName: string, newColor: number) => {
     setPlayerName(newName);
     setColorIndex(newColor);
+    setPlayer((p) => ({ ...p, name: newName }));
     multiplayerClient.setName(newName);
     multiplayerClient.setColorIndex(newColor);
   };
 
   const handleJoinRoom = (newCode: string) => {
-    setRoomCode(newCode);
-    multiplayerClient.connect(newCode, playerName, colorIndex);
+    const cleanCode = newCode.trim().toUpperCase();
+    setRoomCode(cleanCode);
+    try {
+      localStorage.setItem('echoward_room_code', cleanCode);
+    } catch {}
+    multiplayerClient.connect(cleanCode, playerName, colorIndex);
   };
 
   // Admin Actions
@@ -331,7 +413,9 @@ export default function App() {
     <main className="relative h-screen w-screen overflow-hidden bg-[#06080d] font-sans antialiased text-slate-100 select-none">
       {gameState === 'TITLE' ? (
         <TitleScreen
-          onStartGame={handleStartGame}
+          onStartGame={() => handleStartGame(false)}
+          savedCheckpoint={activeSavePoint}
+          onContinueSavedGame={() => handleStartGame(true)}
           onOpenMultiplayer={() => setShowMultiplayer(true)}
           onOpenLore={() => setShowLore(true)}
           onOpenMap={() => setShowMap(true)}
@@ -361,14 +445,18 @@ export default function App() {
             remotePlayers={remotePlayers}
             lanternBrightness={lanternBrightness}
             adminAction={adminAction}
+            activeSavePoint={activeSavePoint}
+            onSaveCheckpoint={handleSaveCheckpoint}
           />
 
-          {/* Top In-Game HUD: Masks, Pulse Vessel, Quick Actions */}
+          {/* Top In-Game HUD: Masks, Pulse Vessel, Quick Actions & Real-Time Mini-Map */}
           <HUD
             player={player}
             currentRoom={currentRoom}
             activeBoss={activeBoss}
             remotePlayers={remotePlayers}
+            discoveredRooms={discoveredRooms}
+            activeSavePoint={activeSavePoint}
             isAdminUnlocked={isAdminUnlocked}
             onOpenMap={() => setShowMap(true)}
             onOpenLore={() => setShowLore(true)}
@@ -468,58 +556,59 @@ export default function App() {
             />
           )}
 
-          {/* Kingdom Map Modal */}
-          {showMap && (
-            <WorldMapModal
-              currentRoom={currentRoom}
-              discoveredRooms={discoveredRooms}
-              remotePlayers={remotePlayers}
-              onClose={() => setShowMap(false)}
-              onFastTravel={(targetRoomId) => {
-                const targetRoom = GAME_ROOMS[targetRoomId];
-                if (targetRoom) {
-                  setCurrentRoom(targetRoom);
-                  setPlayer((prev) => ({
-                    ...prev,
-                    x: 200,
-                    y: 520,
-                    vx: 0,
-                    vy: 0,
-                  }));
-                }
-              }}
-            />
-          )}
-
-          {/* Lore Chronicles & Bestiary Modal */}
-          {showLore && (
-            <LoreModal
-              player={player}
-              discoveredTablets={discoveredTablets}
-              onClose={() => setShowLore(false)}
-            />
-          )}
-
-          {/* Multiplayer Co-op Modal */}
-          {showMultiplayer && (
-            <MultiplayerModal
-              currentRoomCode={roomCode}
-              isConnected={isConnected}
-              remotePlayers={remotePlayers}
-              playerName={playerName}
-              colorIndex={colorIndex}
-              onUpdatePlayer={handleUpdatePlayer}
-              onJoinRoom={handleJoinRoom}
-              onClose={() => setShowMultiplayer(false)}
-              onSendEmote={handleSendEmote}
-            />
-          )}
-
           {/* Controls Guide Modal */}
           {showControls && (
             <ControlsGuide onClose={() => setShowControls(false)} />
           )}
         </>
+      )}
+
+      {/* Modals Accessible in Title Screen & In-Game */}
+      {/* Kingdom Map Modal */}
+      {showMap && (
+        <WorldMapModal
+          currentRoom={currentRoom}
+          discoveredRooms={discoveredRooms}
+          remotePlayers={remotePlayers}
+          onClose={() => setShowMap(false)}
+          onFastTravel={(targetRoomId) => {
+            const targetRoom = GAME_ROOMS[targetRoomId];
+            if (targetRoom) {
+              setCurrentRoom(targetRoom);
+              setPlayer((prev) => ({
+                ...prev,
+                x: 200,
+                y: 520,
+                vx: 0,
+                vy: 0,
+              }));
+            }
+          }}
+        />
+      )}
+
+      {/* Lore Chronicles & Bestiary Modal */}
+      {showLore && (
+        <LoreModal
+          player={player}
+          discoveredTablets={discoveredTablets}
+          onClose={() => setShowLore(false)}
+        />
+      )}
+
+      {/* Multiplayer Co-op Modal */}
+      {showMultiplayer && (
+        <MultiplayerModal
+          currentRoomCode={roomCode}
+          isConnected={isConnected}
+          remotePlayers={remotePlayers}
+          playerName={playerName}
+          colorIndex={colorIndex}
+          onUpdatePlayer={handleUpdatePlayer}
+          onJoinRoom={handleJoinRoom}
+          onClose={() => setShowMultiplayer(false)}
+          onSendEmote={handleSendEmote}
+        />
       )}
     </main>
   );
