@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   Sliders,
   Smartphone,
+  Sparkles,
 } from 'lucide-react';
 import { spriteStore } from '../game/spriteStore';
 import { MiniMap } from './MiniMap';
@@ -40,6 +41,7 @@ interface HUDProps {
   lanternBrightness: 'normal' | 'bright' | 'max';
   onCycleLantern: () => void;
   onToggleAbility?: (abilityName: keyof PlayerState['abilities']) => void;
+  onOpenAnimations?: () => void;
 }
 
 export const HUD: React.FC<HUDProps> = ({
@@ -65,6 +67,7 @@ export const HUD: React.FC<HUDProps> = ({
   lanternBrightness,
   onCycleLantern,
   onToggleAbility,
+  onOpenAnimations,
 }) => {
   const region = REGIONS[currentRoom.regionId] || REGIONS.lumen_village;
 
@@ -280,6 +283,19 @@ export const HUD: React.FC<HUDProps> = ({
               )}
               <kbd className="rounded bg-slate-800 px-1 text-[10px] text-slate-400 font-mono">P</kbd>
             </button>
+
+            {/* Other Players Animations Button */}
+            {onOpenAnimations && (
+              <button
+                onClick={onOpenAnimations}
+                className="flex items-center gap-1 rounded-lg border border-purple-800/80 bg-purple-950/85 px-2.5 py-1 text-xs font-medium text-purple-200 backdrop-blur-md transition-colors hover:border-purple-500 hover:text-white"
+                title="Mudar Animações dos Outros Players"
+              >
+                <Sparkles className="h-3 w-3 text-purple-400" />
+                <span className="hidden sm:inline">Animações</span>
+                <kbd className="rounded bg-slate-800 px-1 text-[10px] text-purple-300 font-mono">Y</kbd>
+              </button>
+            )}
           </div>
 
           {/* Real-Time Mini-Map Widget */}
@@ -303,7 +319,9 @@ export const HUD: React.FC<HUDProps> = ({
             return (
               <div
                 key={rp.id}
-                className={`flex items-center gap-2 rounded-full border px-3.5 py-1 text-[11px] shadow-lg backdrop-blur-md transition-all ${
+                onClick={onOpenAnimations}
+                title="Clique para mudar a animação deste companheiro"
+                className={`flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1 text-[11px] shadow-lg backdrop-blur-md transition-all hover:scale-105 ${
                   rp.isDowned
                     ? 'border-rose-500 bg-rose-950/90 text-rose-200 animate-pulse'
                     : isSameRoom
@@ -335,6 +353,18 @@ export const HUD: React.FC<HUDProps> = ({
               </div>
             );
           })}
+
+          {/* Quick Button to Change Other Players Animations */}
+          {onOpenAnimations && (
+            <button
+              onClick={onOpenAnimations}
+              className="flex items-center gap-1.5 rounded-full border border-purple-500/60 bg-purple-950/85 px-3 py-1 text-[11px] font-semibold text-purple-200 hover:bg-purple-900/90 hover:border-purple-400 shadow-lg backdrop-blur-md transition-all hover:scale-105"
+              title="Personalizar estilos e poses dos outros jogadores"
+            >
+              <Sparkles className="h-3 w-3 text-purple-300 animate-pulse" />
+              <span>Mudar Animações</span>
+            </button>
+          )}
         </div>
       )}
 

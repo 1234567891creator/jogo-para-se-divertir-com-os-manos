@@ -41,6 +41,7 @@ interface MultiplayerModalProps {
   onClose: () => void;
   onSendEmote: (text: string) => void;
   onStartGame?: () => void;
+  onOpenAnimations?: () => void;
 }
 
 const ARCHETYPES: Array<{
@@ -98,6 +99,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
   onClose,
   onSendEmote,
   onStartGame,
+  onOpenAnimations,
 }) => {
   const [inputRoom, setInputRoom] = useState(currentRoomCode || 'LUMEN');
   const [inputName, setInputName] = useState(playerName || 'Nox');
@@ -307,6 +309,16 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {onOpenAnimations && (
+              <button
+                onClick={onOpenAnimations}
+                className="flex items-center gap-1.5 rounded-lg border border-purple-500/50 bg-purple-950/80 px-3 py-1.5 text-xs font-semibold text-purple-200 hover:bg-purple-900/90 hover:border-purple-400 hover:text-white transition-colors"
+                title="Mudar Animações dos Outros Players"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-purple-300 animate-pulse" />
+                <span className="hidden sm:inline">Animações dos Players</span>
+              </button>
+            )}
             <button
               onClick={handleCopyCode}
               className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 hover:text-white hover:border-slate-500 transition-colors"

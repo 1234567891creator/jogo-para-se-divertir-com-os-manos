@@ -265,6 +265,15 @@ export interface Particle {
 
 export type CharacterArchetype = 'Nox' | 'Veyra' | 'Orin' | 'Kael';
 
+export type RemoteAnimationStyle =
+  | 'padrao'
+  | 'espectral'
+  | 'shinobi'
+  | 'chibi'
+  | 'glitch'
+  | 'fogo'
+  | 'danca';
+
 export interface RoomPlayerInfo {
   id: string;
   name: string;
@@ -283,6 +292,7 @@ export interface RoomPlayerInfo {
   vx?: number;
   vy?: number;
   facing?: 'left' | 'right';
+  animationStyle?: RemoteAnimationStyle;
 }
 
 
@@ -325,6 +335,8 @@ export interface RemotePlayer {
   colorIndex: number;
   currentRoomId: string;
   currentAnimation?: string;
+  animationStyle?: RemoteAnimationStyle;
+  customPose?: string;
   maskCracks: MaskCrackStage;
   lastEmote?: { text: string; timer: number };
   lastSeen?: number;

@@ -11,7 +11,9 @@ import {
   RoomSessionSnapshot,
   RoomChatMessage,
   CharacterArchetype,
+  RemoteAnimationStyle,
 } from './types';
+import { playerAnimationStore } from './playerAnimationStore';
 
 export type MultiplayerEventCallback = (event: string, data: any) => void;
 
@@ -364,6 +366,7 @@ export class MultiplayerClient {
         maskCracks: player.maskCracks,
         currentRoomId,
         currentAnimation: player.currentAnimation,
+        animationStyle: playerAnimationStore.getStyleForPlayer(this.myClientId, this.currentName),
         isAttacking: Boolean(player.isAttacking),
         attackDirection: player.attackDirection || 'side',
         isDashing: Boolean(player.isDashing),
@@ -424,6 +427,45 @@ export class MultiplayerClient {
         text,
       })
     );
+  }
+
+  public changeOtherPlayersAnimationStyle(style: RemoteAnimationStyle, targetId: string = 'all') {
+    if (targetId === 'all') {
+      playerAnimationStore.setGlobalOtherPlayersStyle(style);
+      for (const rp of this.remotePlayers.values()) {
+        rp.animationStyle = style;
+      }
+    } else {
+      playerAnimationStore.setPlayerStyle(targetId, style);
+      const rp = this.remotePlayers.get(targetId);
+      if (rp) rp.animationStyle = style;
+    }
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: 'change_animation_style',
+          targetId,
+          style,
+        })
+      );
+    }
+    this.emit('animation_style_changed', { targetId, style, fromId: this.myClientId });
+  }
+
+  public triggerAnimationPose(anim: string, targetId: string = 'all', duration: number = 6) {
+    playerAnimationStore.triggerPose(targetId, anim, duration);
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: 'trigger_animation_pose',
+          targetId,
+          anim,
+          duration,
+        })
+      );
+    }
+    this.emit('animation_pose_triggered', { targetId, anim, duration, fromId: this.myClientId });
   }
 
   public disconnect() {
@@ -509,6 +551,7 @@ export class MultiplayerClient {
         existing.maskCracks = msg.maskCracks;
         existing.currentRoomId = msg.currentRoomId;
         existing.currentAnimation = msg.currentAnimation;
+        if (msg.animationStyle) existing.animationStyle = msg.animationStyle;
         existing.isAttacking = Boolean(msg.isAttacking);
         existing.attackDirection = msg.attackDirection;
         existing.isDashing = Boolean(msg.isDashing);
@@ -533,6 +576,7 @@ export class MultiplayerClient {
           maskCracks: msg.maskCracks ?? 0,
           currentRoomId: msg.currentRoomId || 'room_lumen_haven',
           currentAnimation: msg.currentAnimation || 'idle',
+          animationStyle: msg.animationStyle || 'padrao',
           isAttacking: Boolean(msg.isAttacking),
           attackDirection: msg.attackDirection || 'side',
           isDashing: Boolean(msg.isDashing),
@@ -549,6 +593,7 @@ export class MultiplayerClient {
         rpInfo.hp = msg.hp;
         rpInfo.maxHp = msg.maxHp;
         rpInfo.status = msg.isDowned ? 'downed' : 'exploring';
+        if (msg.animationStyle) rpInfo.animationStyle = msg.animationStyle;
       }
     }
 
@@ -600,7 +645,30 @@ export class MultiplayerClient {
       this.emit('emote', msg);
     }
 
-    // 9. PLAYER LEFT
+    // 9. ANIMATION STYLE CHANGED EVENT
+    else if (msg.type === 'animation_style_changed') {
+      const targetId = msg.targetId;
+      const style = msg.style;
+      if (targetId === 'all') {
+        playerAnimationStore.setGlobalOtherPlayersStyle(style);
+        for (const rp of this.remotePlayers.values()) {
+          rp.animationStyle = style;
+        }
+      } else {
+        playerAnimationStore.setPlayerStyle(targetId, style);
+        const rp = this.remotePlayers.get(targetId);
+        if (rp) rp.animationStyle = style;
+      }
+      this.emit('animation_style_changed', msg);
+    }
+
+    // 10. INTERACTIVE POSE TRIGGERED EVENT
+    else if (msg.type === 'animation_pose_triggered') {
+      playerAnimationStore.triggerPose(msg.targetId, msg.anim, msg.duration || 6);
+      this.emit('animation_pose_triggered', msg);
+    }
+
+    // 11. PLAYER LEFT
     else if (msg.type === 'player_leave') {
       this.remotePlayers.delete(msg.id);
       this.roomPlayers = this.roomPlayers.filter((p) => p.id !== msg.id);
@@ -610,7 +678,7 @@ export class MultiplayerClient {
       this.emit('player_left', msg);
     }
 
-    // 10. PONG
+    // 12. PONG
     else if (msg.type === 'pong') {
       const now = performance.now();
       this.ping = Math.max(1, Math.round(now - this.pingStartTime));

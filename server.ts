@@ -40,6 +40,7 @@ interface RoomPlayerSession {
   isDashing: boolean;
   isDowned: boolean;
   currentAnimation: string;
+  animationStyle: string;
   lastSeen: number;
 }
 
@@ -122,6 +123,7 @@ function getRoomSnapshot(room: GameRoomState) {
       attackDirection: session.attackDirection,
       isDashing: session.isDashing,
       currentAnimation: session.currentAnimation,
+      animationStyle: session.animationStyle || 'padrao',
       maskCracks: session.maskCracks,
     });
   }
@@ -372,6 +374,7 @@ wss.on('connection', (ws: WebSocket) => {
           isDashing: false,
           isDowned: false,
           currentAnimation: 'idle',
+          animationStyle: data.animationStyle || 'padrao',
           lastSeen: Date.now(),
         };
 
@@ -514,6 +517,7 @@ wss.on('connection', (ws: WebSocket) => {
         session.maskCracks = typeof data.maskCracks === 'number' ? data.maskCracks : session.maskCracks;
         session.currentRoomId = data.currentRoomId || session.currentRoomId;
         session.currentAnimation = data.currentAnimation || session.currentAnimation;
+        if (data.animationStyle) session.animationStyle = data.animationStyle;
         session.isAttacking = Boolean(data.isAttacking);
         session.attackDirection = data.attackDirection || 'side';
         session.isDashing = Boolean(data.isDashing);
@@ -541,6 +545,7 @@ wss.on('connection', (ws: WebSocket) => {
             maskCracks: session.maskCracks,
             currentRoomId: session.currentRoomId,
             currentAnimation: session.currentAnimation,
+            animationStyle: session.animationStyle || 'padrao',
             isAttacking: session.isAttacking,
             attackDirection: session.attackDirection,
             isDashing: session.isDashing,
@@ -685,7 +690,60 @@ wss.on('connection', (ws: WebSocket) => {
         }
       }
 
-      // 10. PING / PONG (Latency testing)
+      // 10. ANIMATION STYLE CHANGE (Broadcast and session storage)
+      else if (data.type === 'change_animation_style') {
+        const roomId = socketToRoom.get(ws);
+        if (!roomId || !rooms.has(roomId)) return;
+        const room = rooms.get(roomId)!;
+        const session = room.players.get(ws);
+        if (!session) return;
+
+        const targetId = data.targetId || 'all';
+        const style = data.style || 'padrao';
+
+        if (targetId === 'all') {
+          for (const p of room.players.values()) {
+            p.animationStyle = style;
+          }
+        } else {
+          for (const p of room.players.values()) {
+            if (p.id === targetId) {
+              p.animationStyle = style;
+            }
+          }
+        }
+
+        broadcastToRoom(room, {
+          type: 'animation_style_changed',
+          fromId: session.id,
+          targetId,
+          style,
+        });
+
+        broadcastToRoom(room, {
+          type: 'room_state',
+          room: getRoomSnapshot(room),
+        });
+      }
+
+      // 11. TRIGGER INTERACTIVE ANIMATION POSE
+      else if (data.type === 'trigger_animation_pose') {
+        const roomId = socketToRoom.get(ws);
+        if (!roomId || !rooms.has(roomId)) return;
+        const room = rooms.get(roomId)!;
+        const session = room.players.get(ws);
+        if (!session) return;
+
+        broadcastToRoom(room, {
+          type: 'animation_pose_triggered',
+          fromId: session.id,
+          targetId: data.targetId || 'all',
+          anim: data.anim,
+          duration: data.duration || 6,
+        });
+      }
+
+      // 12. PING / PONG (Latency testing)
       else if (data.type === 'ping') {
         const roomId = socketToRoom.get(ws);
         if (roomId && rooms.has(roomId)) {

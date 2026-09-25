@@ -18,6 +18,7 @@ import { MobileControls } from './components/MobileControls';
 import { DialogueBox } from './components/DialogueBox';
 import { ControlsGuide } from './components/ControlsGuide';
 import { SecretCodeModal } from './components/SecretCodeModal';
+import { OtherPlayersAnimationModal } from './components/OtherPlayersAnimationModal';
 import { multiplayerClient } from './game/multiplayerClient';
 import { soundEngine } from './game/audio';
 import { Sparkles, HelpCircle } from 'lucide-react';
@@ -97,6 +98,7 @@ export default function App() {
   const [showMap, setShowMap] = useState(false);
   const [showLore, setShowLore] = useState(false);
   const [showMultiplayer, setShowMultiplayer] = useState(false);
+  const [showOtherPlayersAnimModal, setShowOtherPlayersAnimModal] = useState(false);
   const [showSpriteManager, setShowSpriteManager] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showSoundModal, setShowSoundModal] = useState(false);
@@ -239,6 +241,8 @@ export default function App() {
         setShowLore((v) => !v);
       } else if (e.code === 'KeyP') {
         setShowMultiplayer((v) => !v);
+      } else if (e.code === 'KeyY') {
+        setShowOtherPlayersAnimModal((v) => !v);
       } else if (e.code === 'KeyT') {
         const remotes = multiplayerClient.getRemotePlayersArray();
         if (remotes.length > 0) {
@@ -258,6 +262,7 @@ export default function App() {
         setShowMap(false);
         setShowLore(false);
         setShowMultiplayer(false);
+        setShowOtherPlayersAnimModal(false);
         setShowSpriteManager(false);
         setShowAdminModal(false);
         setShowSoundModal(false);
@@ -477,6 +482,7 @@ export default function App() {
             lanternBrightness={lanternBrightness}
             onCycleLantern={handleCycleLantern}
             onToggleAbility={handleToggleAbility}
+            onOpenAnimations={() => setShowOtherPlayersAnimModal(true)}
           />
 
           {/* Mobile Touch Controls Overlay (Virtual D-Pad & Action Buttons) */}
@@ -543,7 +549,10 @@ export default function App() {
 
           {/* Sprite & Animation Manager Modal */}
           {showSpriteManager && (
-            <SpriteManagerModal onClose={() => setShowSpriteManager(false)} />
+            <SpriteManagerModal
+              onClose={() => setShowSpriteManager(false)}
+              onOpenOtherPlayersAnimations={() => setShowOtherPlayersAnimModal(true)}
+            />
           )}
 
           {/* NPC Dialogue Box */}
@@ -613,8 +622,16 @@ export default function App() {
           onClose={() => setShowMultiplayer(false)}
           onSendEmote={handleSendEmote}
           onStartGame={() => handleStartGame(false)}
+          onOpenAnimations={() => setShowOtherPlayersAnimModal(true)}
         />
+      )}
 
+      {/* Other Players Animations Customizer Modal */}
+      {showOtherPlayersAnimModal && (
+        <OtherPlayersAnimationModal
+          remotePlayers={remotePlayers}
+          onClose={() => setShowOtherPlayersAnimModal(false)}
+        />
       )}
     </main>
   );

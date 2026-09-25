@@ -66,8 +66,8 @@ export const ControlsGuide: React.FC<ControlsGuideProps> = ({ onClose }) => {
           </div>
 
           <div className="flex items-center justify-between py-1.5">
-            <span className="text-slate-400">Menus (Mapa, Ecos, Co-op):</span>
-            <span className="font-mono text-slate-300 font-bold">M (Mapa) · L (Ecos) · P (Co-op)</span>
+            <span className="text-slate-400">Menus & Animações:</span>
+            <span className="font-mono text-purple-300 font-bold">Y (Animações Co-op) · M · L · P</span>
           </div>
         </div>
 

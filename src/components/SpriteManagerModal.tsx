@@ -30,9 +30,13 @@ import {
 
 interface SpriteManagerModalProps {
   onClose: () => void;
+  onOpenOtherPlayersAnimations?: () => void;
 }
 
-export const SpriteManagerModal: React.FC<SpriteManagerModalProps> = ({ onClose }) => {
+export const SpriteManagerModal: React.FC<SpriteManagerModalProps> = ({
+  onClose,
+  onOpenOtherPlayersAnimations,
+}) => {
   const [activeTab, setActiveTab] = useState<AnimationStateName>('idle');
   const [viewMode, setViewMode] = useState<'editor' | 'speeds' | 'code'>('editor');
   const [groupFilter, setGroupFilter] = useState<'all' | 'nox' | 'npc' | 'enemy'>('all');
@@ -285,6 +289,17 @@ export const SpriteManagerModal: React.FC<SpriteManagerModalProps> = ({ onClose 
                 <Code className="h-3.5 w-3.5" />
                 Salvar no Código
               </button>
+
+              {onOpenOtherPlayersAnimations && (
+                <button
+                  onClick={onOpenOtherPlayersAnimations}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1 font-semibold transition-colors bg-sky-950/80 border border-sky-500/40 text-sky-300 hover:bg-sky-900 shadow-sm"
+                  title="Personalizar animações dos outros jogadores co-op"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-sky-400 animate-pulse" />
+                  <span className="hidden sm:inline">Animações dos Outros Players</span>
+                </button>
+              )}
             </div>
 
             {/* Toggle Custom vs Procedural */}

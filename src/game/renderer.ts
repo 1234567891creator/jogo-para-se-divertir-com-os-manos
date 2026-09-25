@@ -15,6 +15,7 @@ import {
 } from './types';
 import { REGIONS } from './regionsData';
 import { spriteStore, AnimationStateName } from './spriteStore';
+import { playerAnimationStore } from './playerAnimationStore';
 
 export class GameRenderer {
   public cameraX: number = 0;
@@ -969,80 +970,476 @@ export class GameRenderer {
 
   private renderRemoteWanderer(ctx: CanvasRenderingContext2D, remote: RemotePlayer) {
     ctx.save();
-    const colors = ['#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
-    const cloakColor = colors[remote.colorIndex % colors.length];
-    const centerX = remote.x + 14;
-    const isRight = remote.facing === 'right';
 
+    // 1. Determine Animation Style & Overrides
+    const animStyle = playerAnimationStore.getStyleForPlayer(remote.id, remote.name);
+    const activePose = playerAnimationStore.getActivePose(remote.id) || remote.customPose;
+    const animSpeed = playerAnimationStore.animationSpeed;
+    const effectsIntensity = playerAnimationStore.effectsIntensity;
+
+    const time = (Date.now() / 1000) * animSpeed;
+    const isRight = remote.facing === 'right';
+    const centerX = remote.x + 14;
+    const colors = ['#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#eab308'];
+    const cloakColor = colors[remote.colorIndex % colors.length];
+
+    // Determine current animation state
+    let anim = activePose || remote.currentAnimation || 'idle';
+    if (!activePose && !remote.currentAnimation) {
+      if (Math.abs(remote.vx) > 30) anim = 'correr';
+      else if (Math.abs(remote.vx) > 5) anim = 'andar';
+      else if (remote.vy < -20) anim = 'pulo_ar';
+      else if (remote.vy > 20) anim = 'queda_ar';
+    }
+
+    // 2. Check Custom Sprite from spriteStore
+    if (spriteStore.useCustomSprites && spriteStore.hasFrames(anim as AnimationStateName)) {
+      const customFrame = spriteStore.getFrame(anim as AnimationStateName, time);
+      if (customFrame) {
+        ctx.save();
+        if (!isRight) {
+          ctx.translate(centerX * 2, 0);
+          ctx.scale(-1, 1);
+        }
+        const frameW = 28 * 1.8;
+        const frameH = 40 * 1.8;
+        ctx.drawImage(customFrame, centerX - frameW / 2, remote.y + 40 - frameH, frameW, frameH);
+        ctx.restore();
+
+        // Still render name tag and emotes
+        this.renderPlayerNameTag(
+          ctx,
+          centerX,
+          remote.y - 32,
+          remote.name,
+          cloakColor,
+          false,
+          remote.hp,
+          remote.maxHp,
+          remote.isDowned
+        );
+        ctx.restore();
+        return;
+      }
+    }
+
+    // 3. Downed Beacon & Revive Prompt
     if (remote.isDowned) {
+      const pulse = Math.sin(time * 6) * 4;
       ctx.fillStyle = 'rgba(239, 68, 68, 0.35)';
       ctx.beginPath();
-      ctx.arc(centerX, remote.y + 24, 26, 0, Math.PI * 2);
+      ctx.arc(centerX, remote.y + 24, 26 + pulse, 0, Math.PI * 2);
       ctx.fill();
+
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(centerX, remote.y + 24, 30 + pulse, 0, Math.PI * 2);
+      ctx.stroke();
 
       ctx.fillStyle = '#f87171';
       ctx.font = 'bold 11px "Plus Jakarta Sans", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('[E] Reanimar', centerX, remote.y - 42);
+      ctx.fillText('🚨 [E] Reanimar Companheiro', centerX, remote.y - 42);
     }
 
-    // 1. Flowing Cloak
-    ctx.fillStyle = cloakColor;
-    ctx.beginPath();
-    ctx.moveTo(centerX, remote.y + 16);
-    ctx.lineTo(centerX + (isRight ? -16 : 16), remote.y + 42);
-    ctx.lineTo(centerX + (isRight ? 14 : -14), remote.y + 42);
-    ctx.closePath();
-    ctx.fill();
+    // 4. Dash Trail & Ghost Afterimages
+    if (remote.isDashing || anim === 'dash' || anim === 'dash_aereo') {
+      const dashDir = isRight ? 1 : -1;
+      const ghostAlpha = effectsIntensity === 'baixo' ? 0.2 : 0.45;
+      ctx.fillStyle = animStyle === 'shinobi' ? `rgba(15, 23, 42, ${ghostAlpha})` :
+                      animStyle === 'fogo' ? `rgba(249, 115, 22, ${ghostAlpha})` :
+                      animStyle === 'espectral' ? `rgba(192, 132, 252, ${ghostAlpha})` :
+                      `rgba(114, 231, 254, ${ghostAlpha})`;
 
-    // 2. Porcelain Horns
-    ctx.fillStyle = '#EDE3E2';
-    // Left horn
-    ctx.beginPath();
-    ctx.moveTo(centerX - 6, remote.y + 10);
-    ctx.quadraticCurveTo(centerX - 13, remote.y - 4, centerX - 9, remote.y - 14);
-    ctx.quadraticCurveTo(centerX - 4, remote.y - 6, centerX - 2, remote.y + 8);
-    ctx.closePath();
-    ctx.fill();
-    // Right horn
-    ctx.beginPath();
-    ctx.moveTo(centerX + 2, remote.y + 8);
-    ctx.quadraticCurveTo(centerX + 5, remote.y - 4, centerX + 10, remote.y - 11);
-    ctx.quadraticCurveTo(centerX + 11, remote.y - 3, centerX + 6, remote.y + 10);
-    ctx.closePath();
-    ctx.fill();
+      // Trailing clone silhouettes
+      ctx.fillRect(remote.x - dashDir * 24, remote.y + 4, 24, 34);
+      ctx.fillRect(remote.x - dashDir * 44, remote.y + 6, 20, 30);
 
-    // 3. Porcelain Mask
-    ctx.fillStyle = '#EDE3E2';
-    ctx.beginPath();
-    ctx.ellipse(centerX, remote.y + 14, 11, 13, 0, 0, Math.PI * 2);
-    ctx.fill();
+      // Front Crescent Aerodynamic Shockwave Arc
+      ctx.strokeStyle = animStyle === 'fogo' ? '#f97316' : animStyle === 'shinobi' ? '#f43f5e' : '#72E7FE';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      const arcX = dashDir === 1 ? remote.x + 28 + 8 : remote.x - 8;
+      ctx.arc(arcX, remote.y + 22, 24, isRight ? -Math.PI * 0.45 : Math.PI * 0.45, isRight ? Math.PI * 0.45 : -Math.PI * 0.45, !isRight);
+      ctx.stroke();
+    }
 
-    // 4. Glowing Cyan Eyes
-    ctx.fillStyle = '#0a0d14';
-    ctx.beginPath();
-    ctx.ellipse(centerX - 3.5, remote.y + 14, 2.5, 3.8, 0, 0, Math.PI * 2);
-    ctx.ellipse(centerX + 3.5, remote.y + 14, 2.5, 3.8, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // 5. Jump Takeoff Ring & Fall Draft Lines
+    if (anim === 'pulo_inicio' || anim === 'pulo_ar' || anim === 'pular' || remote.vy < -20) {
+      ctx.save();
+      ctx.strokeStyle = animStyle === 'fogo' ? '#fdba74' : animStyle === 'espectral' ? '#d8b4fe' : '#72E7FE';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(centerX, remote.y + 42, 14, 4, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (anim === 'queda_ar' || anim === 'queda' || remote.vy > 20) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 2; i++) {
+        const lineX = centerX + (i === 0 ? -14 : 14);
+        const lineY = remote.y + 4 + ((time * 120 + i * 14) % 28);
+        ctx.beginPath();
+        ctx.moveTo(lineX, lineY);
+        ctx.lineTo(lineX, lineY - 8);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
-    ctx.fillStyle = '#72E7FE';
-    ctx.beginPath();
-    ctx.ellipse(centerX - 3.5, remote.y + 14, 1.8, 2.8, 0, 0, Math.PI * 2);
-    ctx.ellipse(centerX + 3.5, remote.y + 14, 1.8, 2.8, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // 6. Style-Specific Pre-Render Pass
+    let hoverOffsetY = 0;
+    let headOffsetY = 0;
+    let leanAngle = 0;
+    let cloakFlare = 0;
+    let squashX = 1;
+    let squashY = 1;
 
-    // 5. Blade
+    // A. Espectral Style
+    if (animStyle === 'espectral') {
+      ctx.globalAlpha = 0.84;
+      hoverOffsetY = Math.sin(time * 3.2) * 5 - 3;
+      // Stardust glimmers
+      if (effectsIntensity !== 'baixo') {
+        for (let i = 0; i < 3; i++) {
+          const starX = centerX + Math.sin(time * 2 + i * 2.1) * 18;
+          const starY = remote.y + 12 + Math.cos(time * 2.5 + i * 1.5) * 16 + hoverOffsetY;
+          ctx.fillStyle = i % 2 === 0 ? '#c084fc' : '#e0e7ff';
+          ctx.beginPath();
+          ctx.arc(starX, starY, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // B. Shinobi Style
+    else if (animStyle === 'shinobi') {
+      headOffsetY += 3;
+      // Draw dynamic flowing red scarf trailing behind
+      const scarfDir = isRight ? -1 : 1;
+      const wave = Math.sin(time * 9) * 4;
+      ctx.strokeStyle = '#e11d48';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(centerX, remote.y + 16);
+      ctx.quadraticCurveTo(
+        centerX + scarfDir * 16,
+        remote.y + 14 + wave,
+        centerX + scarfDir * 32,
+        remote.y + 18 - wave
+      );
+      ctx.stroke();
+    }
+
+    // C. Chibi Style (Squash & Stretch)
+    else if (animStyle === 'chibi') {
+      const bounce = Math.abs(Math.sin(time * 6));
+      squashY = 0.92 + bounce * 0.16;
+      squashX = 1.08 - bounce * 0.12;
+      hoverOffsetY = -bounce * 4;
+    }
+
+    // D. Glitch Style (Hologram Scanlines & Chromatic Offset)
+    else if (animStyle === 'glitch') {
+      // Offset magenta echo
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = '#ec4899';
+      ctx.beginPath();
+      ctx.ellipse(centerX - 3, remote.y + 20, 12, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // E. Fogo Style (Flame Glow & Embers)
+    else if (animStyle === 'fogo') {
+      if (effectsIntensity !== 'baixo') {
+        for (let i = 0; i < 3; i++) {
+          const emberX = centerX + Math.sin(time * 4 + i * 2) * 14;
+          const emberY = remote.y + 20 - ((time * 40 + i * 16) % 36);
+          ctx.fillStyle = i % 2 === 0 ? '#f97316' : '#facc15';
+          ctx.beginPath();
+          ctx.arc(emberX, emberY, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // F. Dança Style (Celebratory Groove)
+    else if (animStyle === 'danca' || anim === 'danca') {
+      const danceStep = Math.sin(time * 7);
+      leanAngle = danceStep * 0.18;
+      hoverOffsetY = -Math.abs(Math.sin(time * 7)) * 6;
+
+      // Colorful disco aura ring at feet
+      ctx.save();
+      ctx.strokeStyle = `hsl(${(time * 120) % 360}, 90%, 65%)`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.ellipse(centerX, remote.y + 42, 18, 5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Floating musical notes
+      const noteY = remote.y - 10 - ((time * 25) % 30);
+      ctx.fillStyle = '#f472b6';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('♪', centerX + Math.sin(time * 3) * 16, noteY);
+      ctx.restore();
+    }
+
+    // Interactive Pose Adjustments
+    if (anim === 'meditar') {
+      hoverOffsetY = Math.sin(time * 2.5) * 6 - 8;
+      // Rotating Runic Circle
+      ctx.save();
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(centerX, remote.y + 40 + hoverOffsetY, 22, 7, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (anim === 'pose_vitoria') {
+      headOffsetY = -4;
+    } else if (anim === 'reverencia') {
+      headOffsetY = 6;
+      leanAngle = isRight ? 0.35 : -0.35;
+    } else if (anim === 'correr') {
+      leanAngle = isRight ? 0.24 : -0.24;
+    } else if (anim === 'andar') {
+      leanAngle = isRight ? 0.12 : -0.12;
+    } else if (anim === 'queda_ar' || anim === 'queda') {
+      cloakFlare = -10;
+      headOffsetY = 2;
+    } else if (anim === 'morrer' || remote.isDowned) {
+      headOffsetY = 12;
+    }
+
+    // Apply Transformation Matrix for Lean & Squash
     ctx.save();
-    ctx.translate(centerX + (isRight ? 12 : -12), remote.y + 26);
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(isRight ? 16 : -16, 6);
-    ctx.stroke();
-    ctx.restore();
+    ctx.translate(centerX, remote.y + 20 + hoverOffsetY);
+    ctx.rotate(leanAngle);
+    ctx.scale(squashX, squashY);
+    ctx.translate(-centerX, -(remote.y + 20 + hoverOffsetY));
 
-    // 6. Floating Name Tag above head
+    const posY = remote.y + hoverOffsetY;
+    const cloakSway = -remote.vx * 0.035;
+    const cloakBottomY = posY + 42 + cloakFlare;
+
+    // 7. Cloak / Cape
+    if (animStyle === 'fogo') {
+      const flameGrad = ctx.createLinearGradient(centerX, posY + 16, centerX, cloakBottomY);
+      flameGrad.addColorStop(0, '#ef4444');
+      flameGrad.addColorStop(0.5, '#f97316');
+      flameGrad.addColorStop(1, '#eab308');
+      ctx.fillStyle = flameGrad;
+    } else if (animStyle === 'espectral') {
+      ctx.fillStyle = '#a855f7';
+    } else {
+      ctx.fillStyle = cloakColor;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(centerX, posY + 16 + headOffsetY);
+    ctx.quadraticCurveTo(
+      centerX + (isRight ? -14 : 14) + cloakSway,
+      posY + 32,
+      centerX + (isRight ? -18 : 18) + cloakSway,
+      cloakBottomY
+    );
+    // Tattered hem spikes
+    ctx.lineTo(centerX + (isRight ? -10 : 10), cloakBottomY - 3);
+    ctx.lineTo(centerX + (isRight ? -4 : 4), cloakBottomY + 1);
+    ctx.lineTo(centerX + (isRight ? 6 : -6), cloakBottomY - 2);
+    ctx.lineTo(centerX + (isRight ? 14 : -14), posY + 32);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cowl / Collar collar
+    ctx.fillStyle = '#1e293b';
+    ctx.beginPath();
+    ctx.ellipse(centerX, posY + 18 + headOffsetY, 11, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 8. Porcelain Horns (Archetype Specific)
+    const char = remote.character || 'Nox';
+    const maskY = posY + 14 + headOffsetY;
+
+    if (animStyle === 'fogo') {
+      ctx.fillStyle = '#f97316';
+    } else {
+      ctx.fillStyle = '#EDE3E2';
+    }
+
+    if (char === 'Veyra') {
+      // Triple Antler Horns
+      ctx.beginPath();
+      ctx.moveTo(centerX - 5, maskY - 4);
+      ctx.lineTo(centerX - 12, maskY - 18);
+      ctx.lineTo(centerX - 7, maskY - 14);
+      ctx.lineTo(centerX - 14, maskY - 26);
+      ctx.lineTo(centerX - 3, maskY - 6);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(centerX + 3, maskY - 6);
+      ctx.lineTo(centerX + 12, maskY - 24);
+      ctx.lineTo(centerX + 7, maskY - 14);
+      ctx.lineTo(centerX + 11, maskY - 18);
+      ctx.lineTo(centerX + 5, maskY - 4);
+      ctx.closePath();
+      ctx.fill();
+    } else if (char === 'Orin') {
+      // Curled Ram Horns
+      ctx.beginPath();
+      ctx.ellipse(centerX - 8, maskY - 10, 6, 9, -0.4, 0, Math.PI * 2);
+      ctx.ellipse(centerX + 8, maskY - 10, 6, 9, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (char === 'Kael') {
+      // Single Sharp Crescent Blade Horn
+      ctx.beginPath();
+      ctx.moveTo(centerX - 4, maskY - 4);
+      ctx.quadraticCurveTo(centerX + 12, maskY - 24, centerX + 6, maskY - 30);
+      ctx.quadraticCurveTo(centerX - 2, maskY - 16, centerX - 1, maskY - 4);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Nox: Classic Tall Sweeping Horns
+      ctx.beginPath();
+      ctx.moveTo(centerX - 6, maskY - 6);
+      ctx.quadraticCurveTo(centerX - 14, maskY - 18, centerX - 9, maskY - 24);
+      ctx.quadraticCurveTo(centerX - 4, maskY - 18, centerX - 2, maskY - 8);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(centerX + 2, maskY - 8);
+      ctx.quadraticCurveTo(centerX + 5, maskY - 16, centerX + 10, maskY - 20);
+      ctx.quadraticCurveTo(centerX + 11, maskY - 14, centerX + 6, maskY - 6);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 9. Porcelain Mask
+    const maskRadiusX = animStyle === 'chibi' ? 14 : 11;
+    const maskRadiusY = animStyle === 'chibi' ? 14 : 13;
+    ctx.fillStyle = '#EDE3E2';
+    ctx.beginPath();
+    ctx.ellipse(centerX, maskY, maskRadiusX, maskRadiusY, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 10. Glowing Eyes
+    const eyeOffsetX = isRight ? 2 : -2;
+    if (animStyle === 'glitch') {
+      // Cyber single-line horizontal visor
+      ctx.fillStyle = '#06b6d4';
+      ctx.fillRect(centerX - 8, maskY - 1, 16, 3);
+    } else {
+      ctx.fillStyle = '#0a0d14';
+      ctx.beginPath();
+      const eyeR = animStyle === 'chibi' ? 3.8 : 2.5;
+      ctx.ellipse(centerX - 3.5 + eyeOffsetX, maskY, eyeR, eyeR * 1.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(centerX + 3.5 + eyeOffsetX, maskY, eyeR, eyeR * 1.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      const eyeColor = animStyle === 'fogo' ? '#f59e0b' :
+                       animStyle === 'espectral' ? '#c084fc' :
+                       animStyle === 'shinobi' ? '#f43f5e' : '#72E7FE';
+      ctx.fillStyle = eyeColor;
+      ctx.beginPath();
+      ctx.ellipse(centerX - 3.5 + eyeOffsetX, maskY, eyeR * 0.7, eyeR * 1.1, 0, 0, Math.PI * 2);
+      ctx.ellipse(centerX + 3.5 + eyeOffsetX, maskY, eyeR * 0.7, eyeR * 1.1, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupil sparkle
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(centerX - 3 + eyeOffsetX, maskY - 1, 0.9, 0, Math.PI * 2);
+      ctx.arc(centerX + 4 + eyeOffsetX, maskY - 1, 0.9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 11. Blade & Dynamic Attack Slashes
+    if (!remote.isAttacking && anim !== 'pose_vitoria') {
+      // Slender needle blade strapped to back
+      ctx.save();
+      ctx.translate(centerX + (isRight ? 11 : -11), posY + 24 + headOffsetY);
+      ctx.strokeStyle = animStyle === 'shinobi' ? '#475569' : '#cbd5e1';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(isRight ? 14 : -14, 6);
+      ctx.stroke();
+
+      // Blade hilt glow
+      ctx.fillStyle = animStyle === 'fogo' ? '#f97316' : '#72E7FE';
+      ctx.fillRect(-1.5, -1.5, 3, 3);
+      ctx.restore();
+    } else if (anim === 'pose_vitoria') {
+      // Victory stance: Sword raised straight up into the air
+      ctx.save();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(centerX + (isRight ? 4 : -4), maskY);
+      ctx.lineTo(centerX + (isRight ? 4 : -4), maskY - 32);
+      ctx.stroke();
+
+      // Radiant light beacon on tip
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.arc(centerX + (isRight ? 4 : -4), maskY - 32, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      // Dynamic animated slashing attack arc
+      ctx.save();
+      const armX = centerX + (isRight ? 8 : -8);
+      const armY = posY + 16 + headOffsetY;
+      ctx.translate(armX, armY);
+
+      if (remote.attackDirection === 'up') {
+        ctx.rotate(isRight ? -Math.PI * 0.4 : Math.PI * 0.4);
+      } else if (remote.attackDirection === 'down') {
+        ctx.rotate(isRight ? Math.PI * 0.4 : -Math.PI * 0.4);
+      }
+
+      // Slashing blade
+      const slashColor = animStyle === 'fogo' ? '#f97316' :
+                         animStyle === 'espectral' ? '#c084fc' :
+                         animStyle === 'shinobi' ? '#f43f5e' : '#72E7FE';
+      ctx.strokeStyle = slashColor;
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(isRight ? 32 : -32, 0);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(isRight ? 30 : -30, 0);
+      ctx.stroke();
+
+      // Crescent light trail in front of sword
+      ctx.strokeStyle = slashColor;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(isRight ? 18 : -18, 0, 18, isRight ? -Math.PI * 0.4 : Math.PI * 0.6, isRight ? Math.PI * 0.4 : Math.PI * 1.4);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    ctx.restore(); // Restore matrix transformation
+
+    // 12. Floating Name Tag above head
     this.renderPlayerNameTag(
       ctx,
       centerX,
@@ -1055,7 +1452,7 @@ export class GameRenderer {
       remote.isDowned
     );
 
-    // 7. Emote Bubble
+    // 13. Emote Bubble
     if (remote.lastEmote && remote.lastEmote.timer > 0) {
       const bubbleY = remote.y - 58;
       ctx.font = 'bold 12px "Plus Jakarta Sans", sans-serif';
