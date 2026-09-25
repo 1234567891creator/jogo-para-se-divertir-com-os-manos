@@ -298,22 +298,46 @@ export const HUD: React.FC<HUDProps> = ({
       {/* Online Companion Beacon Pill */}
       {remotePlayers.length > 0 && (
         <div className="pointer-events-auto mx-auto mt-2 flex flex-wrap items-center justify-center gap-2">
-          {remotePlayers.map((rp) => (
-            <div
-              key={rp.id}
-              className="flex items-center gap-2 rounded-full border border-cyan-500/60 bg-slate-950/85 px-3 py-1 text-[11px] shadow-lg backdrop-blur-md text-slate-200 animate-fadeIn"
-            >
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-              <span className="font-bold text-cyan-300">{rp.name}</span>
-              <span className="text-slate-400 text-[10px]">HP {rp.hp}/{rp.maxHp}</span>
-              <span className="text-slate-500">·</span>
-              <span className="text-[10px] text-amber-300 font-medium">
-                [T] Reunir
-              </span>
-            </div>
-          ))}
+          {remotePlayers.map((rp) => {
+            const isSameRoom = rp.currentRoomId === currentRoom.id;
+            return (
+              <div
+                key={rp.id}
+                className={`flex items-center gap-2 rounded-full border px-3.5 py-1 text-[11px] shadow-lg backdrop-blur-md transition-all ${
+                  rp.isDowned
+                    ? 'border-rose-500 bg-rose-950/90 text-rose-200 animate-pulse'
+                    : isSameRoom
+                    ? 'border-cyan-500/70 bg-slate-950/90 text-slate-200'
+                    : 'border-slate-700 bg-slate-950/80 text-slate-300'
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    rp.isDowned ? 'bg-rose-500 animate-ping' : 'bg-emerald-400 animate-pulse'
+                  }`}
+                />
+                <span className="font-bold text-cyan-300">{rp.name}</span>
+                <span className="font-mono text-slate-400 text-[10px]">
+                  HP {Math.max(0, rp.hp)}/{rp.maxHp}
+                </span>
+                <span className="text-slate-600">·</span>
+                {rp.isDowned ? (
+                  <span className="text-rose-300 font-bold text-[10px]">
+                    ⚠️ CAÍDO (Aproxime-se e pressione [E])
+                  </span>
+                ) : isSameRoom ? (
+                  <span className="text-emerald-400 text-[10px] font-medium">Na mesma área</span>
+                ) : (
+                  <span className="text-amber-300 text-[10px] font-medium">
+                    [T] Teleportar
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+
 
       {/* Boss Health Bar (When boss active) */}
       {activeBoss && (

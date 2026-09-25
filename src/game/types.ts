@@ -263,9 +263,54 @@ export interface Particle {
   vRot?: number;
 }
 
+export type CharacterArchetype = 'Nox' | 'Veyra' | 'Orin' | 'Kael';
+
+export interface RoomPlayerInfo {
+  id: string;
+  name: string;
+  character: CharacterArchetype;
+  colorIndex: number;
+  isHost: boolean;
+  isReady: boolean;
+  status: 'lobby' | 'ready' | 'exploring' | 'downed';
+  ping: number;
+  currentRoomId: string;
+  hp: number;
+  maxHp: number;
+  slotIndex: number;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+  facing?: 'left' | 'right';
+}
+
+
+export interface RoomSessionSnapshot {
+  roomId: string;
+  hostId: string;
+  playersCount: number;
+  maxPlayers: number;
+  status: 'lobby' | 'playing';
+  players: RoomPlayerInfo[];
+  isFull: boolean;
+}
+
+export interface RoomChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  colorIndex: number;
+  text: string;
+  type: 'chat' | 'emote' | 'system';
+  timestamp: number;
+}
+
 export interface RemotePlayer {
   id: string;
   name: string;
+  character?: CharacterArchetype;
+  slotIndex?: number;
   x: number;
   y: number;
   vx: number;
@@ -284,3 +329,4 @@ export interface RemotePlayer {
   lastEmote?: { text: string; timer: number };
   lastSeen?: number;
 }
+

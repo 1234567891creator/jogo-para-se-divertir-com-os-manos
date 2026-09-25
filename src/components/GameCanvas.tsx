@@ -203,6 +203,36 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     soundEngine.startAmbientMusic(currentRoom.regionId);
   }, [currentRoom.id, initRoomEnemies]);
 
+  // Listen to co-op multiplayer events
+  useEffect(() => {
+    const unsub = multiplayerClient.on((event, data) => {
+      if (event === 'self_revived') {
+        const p = playerRef.current;
+        p.hp = data.hp || 3;
+        p.isDying = false;
+        soundEngine.playHealComplete();
+        gameRenderer.addSparks(p.x + 14, p.y + 20, '#10b981', 35);
+        onPlayerHUDUpdate({ ...p });
+      } else if (event === 'boss_synced') {
+        const boss = activeEnemiesRef.current.find((e) => e.id === data.bossId);
+        if (boss) {
+          boss.hp = data.currentHp;
+          gameRenderer.addSparks(boss.x + boss.width / 2, boss.y + boss.height / 2, '#f59e0b', 20);
+          if (data.isDefeated || data.currentHp <= 0) {
+            boss.hp = 0;
+            setActiveBoss(null);
+            soundEngine.playHealComplete();
+          }
+        }
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, [setActiveBoss, onPlayerHUDUpdate]);
+
+
+
   // Setup Keyboard Listeners
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -323,7 +353,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         return;
       }
     }
+
+    // Check revive for downed co-op companions
+    for (const remote of remotePlayersRef.current) {
+      if (remote.isDowned && remote.currentRoomId === room.id) {
+        if (Math.hypot(p.x - remote.x, p.y - remote.y) < 70) {
+          multiplayerClient.sendRevive(remote.id);
+          soundEngine.playHealComplete();
+          gameRenderer.addSparks(remote.x + 14, remote.y + 20, '#10b981', 30);
+          physicsEngine.screenShake = 6;
+          p.isInteracting = true;
+          p.interactionTimer = 0.5;
+          return;
+        }
+      }
+    }
   };
+
 
   // Main 60FPS Game Loop - Independent of React state updates to prevent any hitching or freezing!
   useEffect(() => {
@@ -431,6 +477,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       // 3. Attack Check vs Enemies
+      if (input.attackPressed) {
+        multiplayerClient.sendPlayerAttack(p.attackDirection);
+      }
+
       if (physicsEngine.activeSlash) {
         const hit = enemyManager.checkPlayerSlash(
           physicsEngine.activeSlash,
@@ -440,6 +490,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         );
         if (hit) {
           onPlayerHUDUpdate({ ...p });
+          for (const en of activeEnemiesRef.current) {
+            if (en.isBoss) {
+              multiplayerClient.sendBossDamage(en.id, 1, en.hp);
+            }
+          }
         }
       }
 

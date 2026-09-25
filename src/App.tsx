@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { PlayerState, GameRoom, ActiveEnemy, NPC, LoreTablet, RemotePlayer, SavePoint } from './game/types';
+import { PlayerState, GameRoom, ActiveEnemy, NPC, LoreTablet, RemotePlayer, SavePoint, CharacterArchetype } from './game/types';
 import { GAME_ROOMS } from './game/worldMap';
 import { GameCanvas, setMobileInput, AdminCanvasAction } from './components/GameCanvas';
 import { HUD } from './components/HUD';
@@ -173,13 +173,17 @@ export default function App() {
 
   // Connect to default multiplayer room on start
   useEffect(() => {
-    multiplayerClient.connect(roomCode, playerName, colorIndex);
+    multiplayerClient.connect(roomCode, playerName, multiplayerClient.currentCharacter, colorIndex);
 
     const unsub = multiplayerClient.on((event, data) => {
-      if (event === 'connected' || event === 'room_joined') {
+      if (event === 'connected' || event === 'joined_room' || event === 'room_state') {
         setIsConnected(true);
+        setRoomCode(multiplayerClient.currentRoomId);
       } else if (event === 'disconnected') {
         setIsConnected(false);
+      } else if (event === 'game_started') {
+        setGameState('PLAYING');
+        setShowMultiplayer(false);
       }
     });
 
@@ -193,6 +197,7 @@ export default function App() {
       multiplayerClient.disconnect();
     };
   }, []);
+
 
   // Track discovered rooms
   useEffect(() => {
@@ -350,12 +355,11 @@ export default function App() {
     multiplayerClient.sendEmote(text);
   };
 
-  const handleUpdatePlayer = (newName: string, newColor: number) => {
+  const handleUpdatePlayer = (newName: string, newColor: number, newChar?: CharacterArchetype) => {
     setPlayerName(newName);
     setColorIndex(newColor);
     setPlayer((p) => ({ ...p, name: newName }));
-    multiplayerClient.setName(newName);
-    multiplayerClient.setColorIndex(newColor);
+    multiplayerClient.updateProfile(newName, newChar, newColor);
   };
 
   const handleJoinRoom = (newCode: string) => {
@@ -364,7 +368,7 @@ export default function App() {
     try {
       localStorage.setItem('echoward_room_code', cleanCode);
     } catch {}
-    multiplayerClient.connect(cleanCode, playerName, colorIndex);
+    multiplayerClient.joinRoom(cleanCode, playerName, multiplayerClient.currentCharacter, colorIndex);
   };
 
   // Admin Actions
@@ -608,7 +612,9 @@ export default function App() {
           onJoinRoom={handleJoinRoom}
           onClose={() => setShowMultiplayer(false)}
           onSendEmote={handleSendEmote}
+          onStartGame={() => handleStartGame(false)}
         />
+
       )}
     </main>
   );
