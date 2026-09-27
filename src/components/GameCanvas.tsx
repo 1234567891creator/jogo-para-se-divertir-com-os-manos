@@ -474,6 +474,29 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       // 1. Update Player Physics & Animation States
       physicsEngine.update(p, input, room.platforms, dt, onBreakFragileFloor, onRespawn, onGroundImpact);
 
+      // Wall sliding sparks
+      if (p.isWallSliding && p.wallDirection !== 0 && Math.random() < 0.55) {
+        globalParticleSystem.createWallSparks(
+          p.wallDirection > 0 ? p.x + p.width : p.x,
+          p.y + p.height * 0.6,
+          p.wallDirection === -1 ? -1 : 1
+        );
+      }
+
+      // Atmospheric cavern particles (floating motes & falling ash)
+      if (Math.random() < 0.18) {
+        const camX = gameRenderer.cameraX;
+        const camY = gameRenderer.cameraY;
+        const width = canvasRef.current?.width || 1200;
+        const height = canvasRef.current?.height || 800;
+
+        if (room.regionId === 'ash_fields' || room.regionId === 'varron_mines') {
+          globalParticleSystem.createFallingAsh(2, camX, camX + width, camY - 30, camY + height * 0.5);
+        } else {
+          globalParticleSystem.createFloatingMotes(1, camX, camX + width, camY, camY + height, '#72E7FE');
+        }
+      }
+
       // 2. Check Collectibles
       for (const item of room.collectibles) {
         if (!item.collected) {

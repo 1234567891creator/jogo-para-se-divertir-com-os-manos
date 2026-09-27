@@ -15,6 +15,8 @@ import {
 } from './types';
 import { playerAnimationStore } from './playerAnimationStore';
 
+export type ConnectionStatus = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'ERROR';
+
 export type MultiplayerEventCallback = (event: string, data: any) => void;
 
 export interface ActiveRoomInfo {
@@ -30,6 +32,10 @@ export interface ActiveRoomInfo {
 export class MultiplayerClient {
   private ws: WebSocket | null = null;
   public isConnected: boolean = false;
+  public connectionStatus: ConnectionStatus = 'DISCONNECTED';
+  public connectionError: string | null = null;
+  public lastWsUrl: string = '';
+  public lastMessage: string = 'Nenhuma';
   public myClientId: string = 'wanderer_' + Math.random().toString(36).substring(2, 9);
   public currentRoomId: string = 'LUMEN';
   public currentName: string = 'Nox';

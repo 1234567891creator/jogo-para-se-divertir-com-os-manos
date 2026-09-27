@@ -91,27 +91,28 @@ TICK_RATE=20
    - **Start Command**: `npm start`
 5. Em **Environment Variables**:
    - `NODE_ENV`: `production`
-   - `ALLOWED_ORIGINS`: `https://seu-jogo.netlify.app`
+   - `ALLOWED_ORIGINS`: `https://joao-para-se-divertir.netlify.app`
 6. O Render fornecerá uma URL pública, ex: `https://echoward-server.onrender.com`.
 
 ### Opção 2: Railway
 1. Acesse [railway.app](https://railway.app).
 2. Novo projeto a partir do repositório Git.
 3. Configure a pasta raiz como `server`.
-4. Porta: `PORT` injetado automaticamente pelo Railway.
+4. Adicione a variável `ALLOWED_ORIGINS` = `https://joao-para-se-divertir.netlify.app`.
+5. Porta: `PORT` injetado automaticamente pelo Railway.
 
 ---
 
-## 6. Como Configurar na Netlify (Frontend)
+## 6. Como Configurar na Netlify (Frontend em https://joao-para-se-divertir.netlify.app)
 
-1. No painel da Netlify do seu site, vá em **Site Configuration** > **Environment Variables**.
+1. No painel da Netlify do seu site **https://joao-para-se-divertir.netlify.app**, vá em **Site Configuration** > **Environment Variables**.
 2. Adicione a variável:
    ```env
    VITE_GAME_SERVER_URL=https://echoward-server.onrender.com
    ```
-   *(ou `wss://echoward-server.onrender.com`)*
-3. Faça um novo Deploy no Netlify (`npm run build`).
-4. O cliente no navegador detectará automaticamente `https:` e conectará com segurança via `wss://echoward-server.onrender.com/ws`.
+   *(ou a URL do seu servidor no Railway/Render/VPS)*
+3. Faça um novo Deploy no Netlify (`Trigger deploy` > `Deploy site`).
+4. O cliente em `https://joao-para-se-divertir.netlify.app` detectará automaticamente a URL e conectará com segurança via `wss://echoward-server.onrender.com/ws`.
 
 ---
 

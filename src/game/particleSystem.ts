@@ -16,11 +16,12 @@ export interface VisualParticle {
   decay: number;
   gravity: number;
   friction: number;
-  shape: 'spark' | 'dust' | 'ring' | 'debris' | 'smoke' | 'ember';
+  shape: 'spark' | 'dust' | 'ring' | 'debris' | 'smoke' | 'ember' | 'ash' | 'mote';
   rotation?: number;
   rotationSpeed?: number;
   ringRadius?: number;
   maxRingRadius?: number;
+  swayPhase?: number;
 }
 
 export class ParticleSystemManager {
@@ -230,6 +231,94 @@ export class ParticleSystemManager {
   }
 
   /**
+   * Sparks emitted when sliding against or hitting a solid stone wall
+   */
+  public createWallSparks(x: number, y: number, wallDir: -1 | 1): void {
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      if (this.particles.length >= this.maxParticles) break;
+      const angle = wallDir > 0 ? Math.PI - Math.random() * 0.9 : Math.random() * 0.9;
+      const speed = 70 + Math.random() * 140;
+      this.particles.push({
+        x: x + (wallDir > 0 ? -2 : 2),
+        y: y + (Math.random() - 0.5) * 16,
+        vx: Math.cos(angle) * speed,
+        vy: -20 - Math.random() * 70,
+        size: 2 + Math.random() * 2,
+        startSize: 2 + Math.random() * 2,
+        color: '#fde047',
+        alpha: 1.0,
+        decay: 3.5,
+        gravity: 280,
+        friction: 0.94,
+        shape: 'spark',
+      });
+    }
+  }
+
+  /**
+   * Atmospheric floating dust motes that drift smoothly in the cavern air
+   */
+  public createFloatingMotes(
+    count: number = 8,
+    minX: number,
+    maxX: number,
+    minY: number,
+    maxY: number,
+    color: string = '#72E7FE'
+  ): void {
+    for (let i = 0; i < count; i++) {
+      if (this.particles.length >= this.maxParticles) break;
+      this.particles.push({
+        x: minX + Math.random() * (maxX - minX),
+        y: minY + Math.random() * (maxY - minY),
+        vx: (Math.random() - 0.5) * 18,
+        vy: -10 - Math.random() * 15,
+        size: 1.5 + Math.random() * 2.5,
+        startSize: 1.5 + Math.random() * 2.5,
+        color,
+        alpha: 0.35 + Math.random() * 0.45,
+        decay: 0.18 + Math.random() * 0.15,
+        gravity: -2,
+        friction: 0.99,
+        shape: 'mote',
+        swayPhase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  /**
+   * Atmospheric falling ashes and embers from the Kingdom of Ashes
+   */
+  public createFallingAsh(
+    count: number = 6,
+    minX: number,
+    maxX: number,
+    minY: number,
+    maxY: number
+  ): void {
+    for (let i = 0; i < count; i++) {
+      if (this.particles.length >= this.maxParticles) break;
+      const isEmber = Math.random() < 0.25;
+      this.particles.push({
+        x: minX + Math.random() * (maxX - minX),
+        y: minY + Math.random() * (maxY - minY),
+        vx: (Math.random() - 0.5) * 25,
+        vy: 20 + Math.random() * 35,
+        size: isEmber ? 2 + Math.random() * 2 : 2.5 + Math.random() * 3,
+        startSize: 2 + Math.random() * 2.5,
+        color: isEmber ? '#f97316' : '#94a3b8',
+        alpha: isEmber ? 0.85 : 0.55,
+        decay: 0.22 + Math.random() * 0.18,
+        gravity: 8,
+        friction: 0.98,
+        shape: 'ash',
+        swayPhase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  /**
    * Update particle positions, velocities, friction, and alphas
    */
   public update(dt: number): void {
@@ -239,6 +328,11 @@ export class ParticleSystemManager {
       p.vx *= p.friction;
       p.vy *= p.friction;
       p.vy += p.gravity * dt;
+
+      if (p.swayPhase !== undefined) {
+        p.swayPhase += dt * 2.2;
+        p.x += Math.sin(p.swayPhase) * (p.shape === 'mote' ? 12 : 20) * dt;
+      }
 
       p.x += p.vx * dt;
       p.y += p.vy * dt;
@@ -283,6 +377,19 @@ export class ParticleSystemManager {
         ctx.shadowBlur = 8;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.shape === 'mote') {
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 5;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.shape === 'ash') {
+        ctx.fillStyle = p.color;
+        ctx.shadowBlur = p.color === '#f97316' ? 4 : 0;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, p.size, p.size * 0.6, 0.4, 0, Math.PI * 2);
         ctx.fill();
       } else if (p.shape === 'dust') {
         ctx.shadowBlur = 0;

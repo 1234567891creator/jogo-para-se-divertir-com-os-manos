@@ -28,12 +28,20 @@ import {
 export function createEchowardApp() {
   const app = express();
 
-  // CORS configuration for Netlify or custom domains
+  // CORS configuration for Netlify, custom domains and localhost
   app.use((req, res, next) => {
-    const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || '';
     const origin = req.headers.origin;
+    const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || '';
 
-    if (allowedOriginsEnv === '*' || !allowedOriginsEnv) {
+    // Automatically allow Netlify, local development, or configured origins
+    const isNetlifyOrigin = origin && (
+      origin === 'https://joao-para-se-divertir.netlify.app' ||
+      origin.endsWith('.netlify.app') ||
+      origin.includes('localhost') ||
+      origin.includes('127.0.0.1')
+    );
+
+    if (allowedOriginsEnv === '*' || !allowedOriginsEnv || isNetlifyOrigin) {
       res.setHeader('Access-Control-Allow-Origin', origin || '*');
     } else {
       const allowedList = allowedOriginsEnv.split(',').map((o) => o.trim().toLowerCase());
@@ -43,7 +51,8 @@ export function createEchowardApp() {
     }
 
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
@@ -56,25 +65,23 @@ export function createEchowardApp() {
   const serverStartTime = Date.now();
 
   // 1. Health check endpoint (for Netlify, Cloud Run, Render, Fly.io, Railway)
-  app.get('/health', (_req: Request, res: Response) => {
+  app.get(['/health', '/api/health'], (_req: Request, res: Response) => {
     const rooms = roomManager.getAllRoomsList();
     const totalPlayers = rooms.reduce((acc, r) => acc + r.playersCount, 0);
 
     res.json({
       status: 'ok',
+      service: 'echoward-multiplayer',
       game: 'Echoward: Reino das Cinzas',
       version: PROTOCOL_VERSION,
+      players: totalPlayers,
+      rooms: rooms.length,
       uptimeSeconds: Math.floor((Date.now() - serverStartTime) / 1000),
       activeRooms: rooms.length,
       connectedPlayers: totalPlayers,
       sanctuaries: PUBLIC_SANCTUARY_ROOMS,
       timestamp: Date.now(),
     });
-  });
-
-  // Alias for /api/health
-  app.get('/api/health', (req: Request, res: Response) => {
-    res.redirect(307, '/health');
   });
 
   // 2. Rooms listing
@@ -511,7 +518,42 @@ export function setupWebSocketServer(httpServer: http.Server) {
           return;
         }
 
-        // 9. HEARTBEAT PING
+        // 9. TOGGLE PLAYER READY STATE
+        if (data.type === 'set_ready' || data.type === 'player_ready') {
+          session.isReady = typeof data.isReady === 'boolean' ? data.isReady : !session.isReady;
+          roomManager.broadcast(room, {
+            type: 'room_state',
+            room: roomManager.getRoomSnapshot(room),
+          });
+          return;
+        }
+
+        // 10. UPDATE PLAYER PROFILE
+        if (data.type === 'update_profile') {
+          if (data.name) session.name = sanitizePlayerName(data.name);
+          if (isValidCharacter(data.character)) session.character = data.character;
+          if (typeof data.colorIndex === 'number') session.colorIndex = data.colorIndex;
+
+          roomManager.broadcast(room, {
+            type: 'room_state',
+            room: roomManager.getRoomSnapshot(room),
+          });
+          return;
+        }
+
+        // 11. START GAME (Host starts co-op match)
+        if (data.type === 'start_game') {
+          if (session.isHost) {
+            room.status = 'playing';
+            roomManager.broadcast(room, {
+              type: 'game_started',
+              room: roomManager.getRoomSnapshot(room),
+            });
+          }
+          return;
+        }
+
+        // 12. HEARTBEAT PING
         if (data.type === 'ping') {
           ws.send(
             JSON.stringify({

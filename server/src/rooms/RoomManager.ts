@@ -100,22 +100,30 @@ export class RoomManager {
 
     for (const session of room.players.values()) {
       playersList.push({
+        id: session.id,
         playerId: session.id,
-        characterId: session.character,
+        name: session.name,
         displayName: session.name,
+        character: session.character,
+        characterId: session.character,
         colorIndex: session.colorIndex,
         slotIndex: session.slotIndex,
         roomId: room.roomId,
         currentRoomId: session.currentRoomId,
         x: session.x,
         y: session.y,
+        vx: session.vx,
+        vy: session.vy,
         velocityX: session.vx,
         velocityY: session.vy,
         facing: session.facing,
+        hp: session.hp,
         health: session.hp,
+        maxHp: session.maxHp,
         maxHealth: session.maxHp,
         grounded: !session.isDowned,
         state: session.isDowned ? 'downed' : (session.currentAnimation as any) || 'idle',
+        status: session.isDowned ? 'downed' : (session.isReady ? 'ready' : 'lobby'),
         isAttacking: session.isAttacking,
         attackDirection: session.attackDirection,
         isDashing: session.isDashing,
@@ -127,7 +135,7 @@ export class RoomManager {
         isHost: session.isHost,
         isReady: session.isReady,
         lastSeen: session.lastSeen,
-      });
+      } as any);
     }
 
     playersList.sort((a, b) => a.slotIndex - b.slotIndex);
