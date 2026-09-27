@@ -90,17 +90,41 @@ export class MultiplayerClient {
 
   /**
    * Resolves REST API and WebSocket endpoints.
-   * If VITE_GAME_SERVER_URL is configured (e.g. on Netlify), connects to the remote backend.
-   * Otherwise falls back to the current browser origin.
+   * Priority:
+   * 1. localStorage custom URL (if configured in UI)
+   * 2. VITE_GAME_SERVER_URL environment variable
+   * 3. Default to Render production server (https://echard-servidor.onrender.com) when hosted on Netlify or external domains
+   * 4. Current host (/ws) for local development
    */
   public getServerEndpoints(): { httpBaseUrl: string; wsUrl: string } {
+    let customUrl = '';
+    try {
+      customUrl = (localStorage.getItem('echoward_custom_server_url') || '').trim();
+    } catch {}
+
     let envUrl = '';
     try {
       envUrl = (import.meta.env?.VITE_GAME_SERVER_URL || '').trim();
     } catch {}
 
-    if (envUrl) {
-      const cleanUrl = envUrl.replace(/\/+$/, '');
+    let targetUrl = customUrl || envUrl;
+
+    // Auto-detect Netlify or external domains without custom server configured
+    if (!targetUrl && typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (
+        hostname.includes('netlify.app') ||
+        (!hostname.includes('localhost') &&
+          !hostname.includes('127.0.0.1') &&
+          !hostname.includes('ais-dev') &&
+          !hostname.includes('ais-pre'))
+      ) {
+        targetUrl = 'https://echard-servidor.onrender.com';
+      }
+    }
+
+    if (targetUrl) {
+      const cleanUrl = targetUrl.replace(/\/+$/, '');
       let wsUrl = cleanUrl;
       if (wsUrl.startsWith('https://')) {
         wsUrl = 'wss://' + wsUrl.substring(8);
@@ -113,15 +137,36 @@ export class MultiplayerClient {
         wsUrl += '/ws';
       }
       const httpBaseUrl = cleanUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+      this.lastWsUrl = wsUrl;
       return { httpBaseUrl, wsUrl };
     }
 
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const host = typeof window !== 'undefined' ? window.location.host : 'localhost:3000';
+    const wsUrl = `${isHttps ? 'wss:' : 'ws:'}//${host}/ws`;
+    this.lastWsUrl = wsUrl;
     return {
       httpBaseUrl: '',
-      wsUrl: `${isHttps ? 'wss:' : 'ws:'}//${host}/ws`,
+      wsUrl,
     };
+  }
+
+  public setCustomServerUrl(url: string) {
+    try {
+      const trimmed = url.trim();
+      if (trimmed) {
+        localStorage.setItem('echoward_custom_server_url', trimmed);
+      } else {
+        localStorage.removeItem('echoward_custom_server_url');
+      }
+    } catch {}
+    // Reconnect with new endpoint
+    this.connect(this.currentRoomId, this.currentName, this.currentCharacter, this.currentColorIndex);
+  }
+
+  public getEffectiveServerUrl(): string {
+    const endpoints = this.getServerEndpoints();
+    return endpoints.httpBaseUrl || 'Servidor Local (Porta 3000)';
   }
 
   public async fetchActiveRooms(): Promise<ActiveRoomInfo[]> {

@@ -28,6 +28,7 @@ import {
   Share2,
   Shield,
   Zap,
+  Settings,
 } from 'lucide-react';
 
 interface MultiplayerModalProps {
@@ -116,6 +117,13 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
   const [isCopied, setIsCopied] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Server connection & configuration
+  const [showServerConfig, setShowServerConfig] = useState(false);
+  const [serverUrlInput, setServerUrlInput] = useState(
+    multiplayerClient.getEffectiveServerUrl() || 'https://echard-servidor.onrender.com'
+  );
+  const [isReconnecting, setIsReconnecting] = useState(false);
+
   // Live state from client
   const [roomPlayers, setRoomPlayers] = useState<RoomPlayerInfo[]>(multiplayerClient.roomPlayers);
   const [isReady, setIsReady] = useState(multiplayerClient.isReady);
@@ -131,9 +139,57 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
     setIsLoadingRooms(false);
   };
 
+  const handleReconnectServer = async () => {
+    setIsReconnecting(true);
+    setActionMessage({
+      text: 'Acordando servidor na nuvem (Render) e estabelecendo conexão...',
+      type: 'success',
+    });
+    try {
+      const endpoints = multiplayerClient.getServerEndpoints();
+      // Send HTTP health ping to wake up container from Render free tier sleep
+      if (endpoints.httpBaseUrl) {
+        await fetch(`${endpoints.httpBaseUrl}/api/health`, { method: 'GET' }).catch(() => {});
+      }
+    } catch {}
+    multiplayerClient.connect(currentRoomCode, inputName, selectedCharacter, selectedColor);
+    setTimeout(() => {
+      setIsReconnecting(false);
+      loadRooms();
+    }, 2500);
+  };
+
+  const handleSaveServerUrl = () => {
+    const trimmed = serverUrlInput.trim();
+    multiplayerClient.setCustomServerUrl(trimmed);
+    setShowServerConfig(false);
+    setActionMessage({
+      text: `Endereço do servidor atualizado para: ${trimmed || 'Automático'}`,
+      type: 'success',
+    });
+    handleReconnectServer();
+  };
+
+  const handleResetServerUrl = () => {
+    const defaultUrl = 'https://echard-servidor.onrender.com';
+    setServerUrlInput(defaultUrl);
+    multiplayerClient.setCustomServerUrl(defaultUrl);
+    setShowServerConfig(false);
+    setActionMessage({
+      text: 'Servidor restaurado para o padrão Render (https://echard-servidor.onrender.com)',
+      type: 'success',
+    });
+    handleReconnectServer();
+  };
+
   useEffect(() => {
     loadRooms();
     const interval = setInterval(loadRooms, 3500);
+
+    // Initial wake-up attempt if not yet connected
+    if (!isConnected) {
+      handleReconnectServer();
+    }
 
     // Sync state continuously from multiplayerClient
     const syncInterval = setInterval(() => {
@@ -268,6 +324,36 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
     }
   }
 
+  // Ensure local player is ALWAYS visible in the slots (even while connecting or waking up server)
+  const hasLocalPlayer = slots.some(
+    (p) => p && (p.id === multiplayerClient.myClientId || p.name === inputName)
+  );
+  if (!hasLocalPlayer) {
+    const localSlot = Math.min(3, Math.max(0, multiplayerClient.slotIndex || 0));
+    slots[localSlot] = {
+      id: multiplayerClient.myClientId,
+      name: inputName || 'Nox',
+      character: selectedCharacter || 'Nox',
+      colorIndex: selectedColor,
+      slotIndex: localSlot,
+      currentRoomId: 'room_lumen_haven',
+      x: 200,
+      y: 556,
+      vx: 0,
+      vy: 0,
+      facing: 'right',
+      hp: 5,
+      maxHp: 5,
+      status: isConnected ? (isReady ? 'ready' : 'lobby') : 'lobby',
+      animationStyle: 'padrao',
+      ping: multiplayerClient.ping,
+      isHost: isHost || roomPlayers.length === 0,
+      isReady: isReady,
+    };
+  }
+
+  const effectiveServerDisplay = multiplayerClient.getEffectiveServerUrl();
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-2 sm:p-4 backdrop-blur-md">
       <div className="relative flex h-[94vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-700/80 bg-[#090d15] text-slate-200 shadow-2xl overflow-hidden font-sans">
@@ -290,11 +376,11 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
                 {isConnected ? (
                   <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
                     <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <Wifi className="h-3.5 w-3.5" /> Servidor Ativo ({multiplayerClient.ping}ms)
+                    <Wifi className="h-3.5 w-3.5" /> Servidor Conectado ({multiplayerClient.ping}ms)
                   </span>
                 ) : (
                   <span className="flex items-center gap-1.5 text-amber-400 font-medium">
-                    <WifiOff className="h-3.5 w-3.5" /> Conectando ao Servidor...
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Conectando ao Render...
                   </span>
                 )}
                 <span>·</span>
@@ -345,6 +431,79 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
           </div>
         </div>
 
+        {/* Server Connection Sub-bar with Live Status & Quick Reconnect */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-5 sm:px-7 py-2 bg-slate-900/90 border-b border-slate-800 text-xs">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <span className="text-slate-400 font-mono text-[11px] shrink-0">Servidor:</span>
+            <span className="font-mono text-cyan-300 font-semibold text-[11px] truncate max-w-[200px] sm:max-w-xs">
+              {effectiveServerDisplay}
+            </span>
+            {isConnected ? (
+              <span className="flex items-center gap-1 rounded bg-emerald-950/80 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/40">
+                <Check className="h-3 w-3" /> Online
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 rounded bg-amber-950/80 px-2 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-500/40 animate-pulse">
+                <RefreshCw className="h-3 w-3 animate-spin" /> Conectando...
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleReconnectServer}
+              disabled={isReconnecting}
+              className="flex items-center gap-1.5 rounded-lg border border-cyan-500/50 bg-cyan-950/70 px-2.5 py-1 text-[11px] font-semibold text-cyan-300 hover:bg-cyan-900/90 transition-all cursor-pointer"
+              title="Acorda o servidor Render e restabelece a conexão"
+            >
+              <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
+              <span>{isReconnecting ? 'Acordando...' : 'Reconectar Servidor'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowServerConfig(!showServerConfig)}
+              className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white transition-all cursor-pointer"
+              title="Configurar URL do servidor"
+            >
+              <Settings className="h-3 w-3" />
+              <span>URL</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Server URL Config Drawer */}
+        {showServerConfig && (
+          <div className="bg-slate-950 border-b border-slate-800 px-5 sm:px-7 py-3 space-y-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <input
+                type="text"
+                value={serverUrlInput}
+                onChange={(e) => setServerUrlInput(e.target.value)}
+                placeholder="https://echard-servidor.onrender.com"
+                className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-mono text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleSaveServerUrl}
+                className="rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-cyan-500 transition-colors"
+              >
+                Salvar & Conectar
+              </button>
+              <button
+                type="button"
+                onClick={handleResetServerUrl}
+                className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
+              >
+                Padrão Render
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Servidor oficial: <strong className="text-cyan-300">https://echard-servidor.onrender.com</strong>.
+              Caso o servidor esteja dormindo no plano grátis do Render, clique em <em>Reconectar Servidor</em> e aguarde ~30 segundos para ele ligar.
+            </p>
+          </div>
+        )}
+
         {/* Action Status Notification */}
         {actionMessage && (
           <div
@@ -371,7 +530,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
               <div className="flex items-center gap-2">
                 <Crown className="h-4 w-4 text-amber-400" />
                 <h3 className="text-xs font-bold uppercase tracking-widest text-slate-300">
-                  Lobby da Sessão · {currentRoomCode} ({roomPlayers.length} / 4 Andarilhos)
+                  Lobby da Sessão · {currentRoomCode} ({slots.filter(Boolean).length} / 4 Andarilhos)
                 </h3>
               </div>
               <span className="text-xs text-slate-400">
