@@ -612,19 +612,29 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
                 type="button"
                 disabled={isProcessing}
                 onClick={() => handleJoinWithCode()}
-                className="flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-cyan-500 transition-colors shadow-lg shadow-cyan-950/50 disabled:opacity-50"
+                className="flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-cyan-500 transition-colors shadow-lg shadow-cyan-950/50 disabled:opacity-50"
               >
                 <LogIn className="h-4 w-4" />
-                <span>Entrar na Sessão</span>
+                <span>Entrar</span>
               </button>
               <button
                 type="button"
                 disabled={isProcessing}
                 onClick={handleCreateRoom}
-                className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-950/50 disabled:opacity-50"
+                className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-950/50 disabled:opacity-50"
               >
                 <PlusCircle className="h-4 w-4" />
-                <span>Criar Nova Sessão</span>
+                <span>Criar Sala</span>
+              </button>
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={() => handleJoinWithCode('LUMEN')}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-cyan-700/60 bg-cyan-950/70 px-3.5 py-2.5 text-xs font-bold text-cyan-200 hover:bg-cyan-900 transition-colors disabled:opacity-50"
+                title="Conectar ao Servidor Global de Lumen"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+                <span>Servidor Global (LUMEN)</span>
               </button>
             </div>
           </div>

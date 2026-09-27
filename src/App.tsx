@@ -140,16 +140,16 @@ export default function App() {
     }
   });
 
-  // Multiplayer Room State (unique session code by default to prevent stranger clone clutter)
+  // Unified Realm Server on site start (Canonical Shared Sanctuary: LUMEN)
   const [roomCode, setRoomCode] = useState(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const urlRoom = urlParams.get('room');
       if (urlRoom) return urlRoom.trim().toUpperCase();
       const saved = localStorage.getItem('echoward_room_code');
-      if (saved) return saved;
+      if (saved && !saved.startsWith('SALA-')) return saved.trim().toUpperCase();
     } catch {}
-    const defaultCode = 'SALA-' + Math.floor(100 + Math.random() * 900);
+    const defaultCode = 'LUMEN';
     try {
       localStorage.setItem('echoward_room_code', defaultCode);
     } catch {}

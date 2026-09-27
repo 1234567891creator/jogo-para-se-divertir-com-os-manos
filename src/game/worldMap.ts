@@ -23,6 +23,8 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
       { x: 0, y: -50, width: 1400, height: 50, type: 'solid' },
       { x: 160, y: 460, width: 220, height: 20, type: 'solid' },
       { x: 480, y: 400, width: 240, height: 20, type: 'solid' },
+      { x: 500, y: 260, width: 180, height: 20, type: 'solid' },
+      { x: 520, y: 130, width: 180, height: 20, type: 'solid' },
       { x: 800, y: 480, width: 200, height: 20, type: 'solid' },
       { x: 1050, y: 340, width: 180, height: 20, type: 'solid' },
     ],
@@ -78,7 +80,16 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
         ],
       },
     ],
-    collectibles: [],
+    collectibles: [
+      {
+        id: 'shard_haven_cache',
+        x: 1100,
+        y: 300,
+        type: 'shard',
+        label: 'Eco das Primeiras Memórias (+50 Fragmentos)',
+        collected: false,
+      },
+    ],
   },
 
   // Fase 2: Encruzilhada dos Peregrinos
@@ -95,7 +106,8 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
       from_catacombs: { x: 800, y: 720 },
     },
     platforms: [
-      { x: 0, y: 800, width: 1600, height: 100, type: 'solid' },
+      { x: 0, y: 800, width: 680, height: 100, type: 'solid' },
+      { x: 920, y: 800, width: 680, height: 100, type: 'solid' },
       { x: 0, y: 0, width: 40, height: 650, type: 'solid' },
       { x: 1560, y: 0, width: 40, height: 650, type: 'solid' },
       { x: 200, y: 680, width: 180, height: 20, type: 'solid' },
@@ -119,9 +131,9 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
       },
       {
         side: 'bottom',
-        rect: { x: 700, y: 850, width: 200, height: 50 },
+        rect: { x: 680, y: 810, width: 240, height: 80 },
         targetRoomId: 'room_lumen_catacombs',
-        targetSpawn: { x: 700, y: 100 },
+        targetSpawn: { x: 700, y: 150 },
       },
     ],
     enemies: [
@@ -141,7 +153,16 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
     ],
     totems: [],
     npcs: [],
-    collectibles: [],
+    collectibles: [
+      {
+        id: 'shard_crossroads_cache',
+        x: 800,
+        y: 400,
+        type: 'shard',
+        label: 'Fragmento de Cinza Brilhante (+75 Fragmentos)',
+        collected: false,
+      },
+    ],
   },
 
   // Fase 3: Telhados de Cinzas de Lumen
@@ -156,7 +177,8 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
       from_haven: { x: 400, y: 650 },
     },
     platforms: [
-      { x: 0, y: 750, width: 1400, height: 50, type: 'solid' },
+      { x: 0, y: 750, width: 300, height: 50, type: 'solid' },
+      { x: 600, y: 750, width: 800, height: 50, type: 'solid' },
       { x: 100, y: 600, width: 250, height: 20, type: 'solid' },
       { x: 450, y: 500, width: 220, height: 20, type: 'solid' },
       { x: 780, y: 400, width: 260, height: 20, type: 'solid' },
@@ -166,7 +188,7 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
     transitions: [
       {
         side: 'bottom',
-        rect: { x: 300, y: 760, width: 300, height: 40 },
+        rect: { x: 300, y: 740, width: 300, height: 60 },
         targetRoomId: 'room_lumen_haven',
         targetSpawn: { x: 500, y: 350 },
       },
@@ -209,11 +231,12 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
     spawns: {
       default: { x: 700, y: 150 },
       from_crossroads: { x: 700, y: 150 },
-      from_varron: { x: 1400, y: 680 },
+      from_varron: { x: 1380, y: 670 },
     },
     platforms: [
       { x: 0, y: 720, width: 1500, height: 80, type: 'solid' },
       { x: 0, y: 0, width: 40, height: 800, type: 'solid' },
+      { x: 640, y: 110, width: 180, height: 20, type: 'solid' },
       { x: 600, y: 220, width: 250, height: 20, type: 'solid' },
       { x: 300, y: 380, width: 220, height: 20, type: 'solid' },
       { x: 750, y: 480, width: 260, height: 20, type: 'solid' },
@@ -273,7 +296,16 @@ export const GAME_ROOMS: Record<string, GameRoom> = {
         ],
       },
     ],
-    collectibles: [],
+    collectibles: [
+      {
+        id: 'shard_catacombs_cache',
+        x: 340,
+        y: 340,
+        type: 'shard',
+        label: 'Relíquia de Porcelana Antiga (+100 Fragmentos)',
+        collected: false,
+      },
+    ],
   },
 
   // ==========================================

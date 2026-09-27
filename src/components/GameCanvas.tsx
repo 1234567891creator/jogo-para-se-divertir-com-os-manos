@@ -15,6 +15,7 @@ import { enemyManager } from '../game/enemies';
 import { gameRenderer } from '../game/renderer';
 import { soundEngine } from '../game/audio';
 import { multiplayerClient } from '../game/multiplayerClient';
+import { globalParticleSystem } from '../game/particleSystem';
 
 export interface AdminCanvasAction {
   type: 'kill_enemies' | 'spawn_enemy' | 'teleport' | 'heal_full' | 'pulse_full' | 'unlock_abilities';
@@ -452,8 +453,26 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         onPlayerHUDUpdate({ ...p });
       };
 
+      const onGroundImpact = (x: number, y: number, intensity: number) => {
+        globalParticleSystem.createGroundImpact(x, y, intensity);
+        soundEngine.playLanding();
+      };
+
+      if (input.dashPressed && p.dashCooldown <= 0) {
+        globalParticleSystem.createDustPuff(
+          p.x + (p.facing === 'right' ? 0 : p.width),
+          p.y + p.height - 4,
+          10,
+          p.facing === 'right' ? -1.5 : 1.5
+        );
+      }
+
+      if (input.jumpPressed && (p.isGrounded || physicsEngine.coyoteTimer > 0)) {
+        globalParticleSystem.createDustPuff(p.x + p.width / 2, p.y + p.height, 8, 0);
+      }
+
       // 1. Update Player Physics & Animation States
-      physicsEngine.update(p, input, room.platforms, dt, onBreakFragileFloor, onRespawn);
+      physicsEngine.update(p, input, room.platforms, dt, onBreakFragileFloor, onRespawn, onGroundImpact);
 
       // 2. Check Collectibles
       for (const item of room.collectibles) {

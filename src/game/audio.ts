@@ -255,6 +255,25 @@ class SoundEngine {
     osc.stop(this.ctx.currentTime + 0.13);
   }
 
+  public playLanding() {
+    if (!this.ctx || !this.sfxGain || this.isMuted) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(140, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(35, this.ctx.currentTime + 0.08);
+
+    gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.09);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.1);
+  }
+
   public playHealFocus() {
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
     const osc = this.ctx.createOscillator();

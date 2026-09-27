@@ -3,8 +3,9 @@
  */
 
 import { ActiveEnemy, EnemyType, PlayerState, Projectile, AttackSlash, Rect } from './types';
-import { checkAABB } from './physics';
+import { checkAABB, physicsEngine } from './physics';
 import { soundEngine } from './audio';
+import { globalParticleSystem } from './particleSystem';
 
 export class EnemyManager {
   public projectiles: Projectile[] = [];
@@ -227,6 +228,8 @@ export class EnemyManager {
           player.hp = Math.max(0, player.hp - 1);
           player.invulnerableTimer = 1.0;
           soundEngine.playDamage();
+          physicsEngine.triggerCameraShake(12);
+          globalParticleSystem.createDamageAsh(player.x + player.width / 2, player.y + player.height / 2, '#ef4444', 14);
           this.projectiles.splice(i, 1);
           continue;
         }
@@ -342,6 +345,8 @@ export class EnemyManager {
         player.vx = enemy.facing * 250;
         player.vy = -200;
         soundEngine.playDamage();
+        physicsEngine.triggerCameraShake(12);
+        globalParticleSystem.createDamageAsh(player.x + player.width / 2, player.y + player.height / 2, '#ef4444', 16);
       }
 
       // Death check
@@ -363,6 +368,7 @@ export class EnemyManager {
       boss.phase = 2;
       boss.attackCooldown = 1.5;
       soundEngine.playGroundPound();
+      physicsEngine.triggerCameraShake(16);
     }
 
     boss.attackTimer -= dt;
@@ -378,6 +384,8 @@ export class EnemyManager {
         // Halberd Ground Slam with Shockwaves
         boss.state = 'attack';
         soundEngine.playGroundPound();
+        physicsEngine.triggerCameraShake(15);
+        globalParticleSystem.createBossAttackEffect(boss.x + boss.width / 2, boss.y + boss.height, '#f59e0b', 1.5);
 
         // Spawn left and right shockwaves
         [-240, 240].forEach((vx) => {
@@ -474,6 +482,8 @@ export class EnemyManager {
       } else {
         // Molten Hammer Seismic Quake
         soundEngine.playGroundPound();
+        physicsEngine.triggerCameraShake(18);
+        globalParticleSystem.createBossAttackEffect(boss.x + boss.width / 2, boss.y + boss.height, '#ea580c', 1.8);
         [-280, 280].forEach((vx) => {
           this.projectiles.push({
             id: 'magma_' + Math.random(),
@@ -508,6 +518,7 @@ export class EnemyManager {
       boss.phase = 2;
       boss.attackCooldown = 1.3;
       soundEngine.playNpcVoice();
+      physicsEngine.triggerCameraShake(16);
     }
 
     boss.facing = player.x < boss.x ? -1 : 1;
@@ -566,6 +577,8 @@ export class EnemyManager {
         boss.vx = (player.x - boss.x) * 1.5;
         boss.vy = -380;
         soundEngine.playGroundPound();
+        physicsEngine.triggerCameraShake(15);
+        globalParticleSystem.createBossAttackEffect(boss.x + boss.width / 2, boss.y + boss.height, '#a855f7', 1.4);
       }
     }
 
@@ -600,6 +613,13 @@ export class EnemyManager {
         enemy.hp -= slash.damage;
         enemy.invulnerableTimer = 0.18;
         soundEngine.playHit();
+        physicsEngine.triggerCameraShake(enemy.isBoss ? 9 : 5);
+        globalParticleSystem.createCombatSparks(
+          slash.x + slash.width / 2,
+          slash.y + slash.height / 2,
+          '#72E7FE',
+          enemy.isBoss ? 22 : 12
+        );
 
         // Gain Pulse on hit
         player.pulse = Math.min(player.maxPulse, player.pulse + 16);

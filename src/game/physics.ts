@@ -55,13 +55,18 @@ export class PhysicsEngine {
   public activeSlash: AttackSlash | null = null;
   public screenShake: number = 0;
 
+  public triggerCameraShake(intensity: number): void {
+    this.screenShake = Math.max(this.screenShake, intensity);
+  }
+
   public update(
     player: PlayerState,
     input: InputState,
     platforms: Platform[],
     dt: number,
     onBreakFragileFloor?: (p: Platform) => void,
-    onRespawn?: () => void
+    onRespawn?: () => void,
+    onGroundImpact?: (x: number, y: number, intensity: number) => void
   ) {
     if (this.screenShake > 0) {
       this.screenShake = Math.max(0, this.screenShake - dt * 25);
@@ -394,7 +399,7 @@ export class PhysicsEngine {
     }
 
     // Collisions
-    this.handleCollisions(player, platforms, dt, onBreakFragileFloor);
+    this.handleCollisions(player, platforms, dt, onBreakFragileFloor, onGroundImpact);
 
     // Animation state
     player.currentAnimation = this.determineAnimationState(player);
@@ -442,7 +447,8 @@ export class PhysicsEngine {
     player: PlayerState,
     platforms: Platform[],
     dt: number,
-    onBreakFragileFloor?: (p: Platform) => void
+    onBreakFragileFloor?: (p: Platform) => void,
+    onGroundImpact?: (x: number, y: number, intensity: number) => void
   ) {
     const wasInAir = !player.isGrounded;
     const prevVy = player.vy;
@@ -548,12 +554,24 @@ export class PhysicsEngine {
 
               if (wasInAir && prevVy > 40) {
                 player.landingTimer = 0.18;
+
+                // Hard ground impact triggers camera shake and dust/shockwave
+                if (prevVy > 240) {
+                  const impactIntensity = Math.min(15, 4 + (prevVy - 240) * 0.02);
+                  this.triggerCameraShake(impactIntensity);
+                  if (onGroundImpact) {
+                    onGroundImpact(player.x + player.width / 2, player.y + player.height, impactIntensity);
+                  }
+                }
               }
 
               if (player.isGroundPounding) {
                 player.isGroundPounding = false;
-                this.screenShake = 18;
+                this.triggerCameraShake(20);
                 soundEngine.playHit();
+                if (onGroundImpact) {
+                  onGroundImpact(player.x + player.width / 2, player.y + player.height, 2.2);
+                }
                 if (plat.type === 'fragile' && onBreakFragileFloor) {
                   onBreakFragileFloor(plat);
                 }

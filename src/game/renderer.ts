@@ -16,6 +16,7 @@ import {
 import { REGIONS } from './regionsData';
 import { spriteStore, AnimationStateName } from './spriteStore';
 import { playerAnimationStore } from './playerAnimationStore';
+import { globalParticleSystem } from './particleSystem';
 
 export class GameRenderer {
   public cameraX: number = 0;
@@ -1760,6 +1761,10 @@ export class GameRenderer {
   }
 
   private updateAndRenderParticles(ctx: CanvasRenderingContext2D, dt: number, room: GameRoom) {
+    // 1. Update and render global injected particle system (dust, combat sparks, ground impacts, boss effects)
+    globalParticleSystem.update(dt);
+    globalParticleSystem.render(ctx);
+
     if (this.particles.length < 50 && Math.random() < 0.4) {
       const region = REGIONS[room.regionId] || REGIONS.lumen_village;
       const x = this.cameraX + Math.random() * 1200;

@@ -80,9 +80,48 @@ export class MultiplayerClient {
     }
   }
 
+  private reconnectAttempts = 0;
+
+  /**
+   * Resolves REST API and WebSocket endpoints.
+   * If VITE_GAME_SERVER_URL is configured (e.g. on Netlify), connects to the remote backend.
+   * Otherwise falls back to the current browser origin.
+   */
+  public getServerEndpoints(): { httpBaseUrl: string; wsUrl: string } {
+    let envUrl = '';
+    try {
+      envUrl = (import.meta.env?.VITE_GAME_SERVER_URL || '').trim();
+    } catch {}
+
+    if (envUrl) {
+      const cleanUrl = envUrl.replace(/\/+$/, '');
+      let wsUrl = cleanUrl;
+      if (wsUrl.startsWith('https://')) {
+        wsUrl = 'wss://' + wsUrl.substring(8);
+      } else if (wsUrl.startsWith('http://')) {
+        wsUrl = 'ws://' + wsUrl.substring(7);
+      } else if (!wsUrl.startsWith('ws://') && !wsUrl.startsWith('wss://')) {
+        wsUrl = 'wss://' + wsUrl;
+      }
+      if (!wsUrl.endsWith('/ws')) {
+        wsUrl += '/ws';
+      }
+      const httpBaseUrl = cleanUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+      return { httpBaseUrl, wsUrl };
+    }
+
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const host = typeof window !== 'undefined' ? window.location.host : 'localhost:3000';
+    return {
+      httpBaseUrl: '',
+      wsUrl: `${isHttps ? 'wss:' : 'ws:'}//${host}/ws`,
+    };
+  }
+
   public async fetchActiveRooms(): Promise<ActiveRoomInfo[]> {
     try {
-      const res = await fetch('/api/rooms');
+      const { httpBaseUrl } = this.getServerEndpoints();
+      const res = await fetch(`${httpBaseUrl}/api/rooms`);
       if (res.ok) {
         const data = await res.json();
         return data.rooms || [];
@@ -94,7 +133,7 @@ export class MultiplayerClient {
       {
         roomId: 'LUMEN',
         playersCount: 1,
-        maxPlayers: 4,
+        maxPlayers: 16,
         status: 'lobby',
         isFull: false,
         hostId: '',
@@ -108,7 +147,8 @@ export class MultiplayerClient {
   ): Promise<{ success: boolean; roomId: string; error?: string }> {
     const raw = (preferredCode || '').trim().toUpperCase();
     try {
-      const res = await fetch('/api/rooms/create', {
+      const { httpBaseUrl } = this.getServerEndpoints();
+      const res = await fetch(`${httpBaseUrl}/api/rooms/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preferredCode: raw || undefined, name: this.currentName }),
@@ -148,7 +188,8 @@ export class MultiplayerClient {
     } catch {}
 
     try {
-      const res = await fetch('/api/rooms/join', {
+      const { httpBaseUrl } = this.getServerEndpoints();
+      const res = await fetch(`${httpBaseUrl}/api/rooms/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId: cleanCode }),
@@ -218,15 +259,14 @@ export class MultiplayerClient {
     }
 
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-
+      const { wsUrl } = this.getServerEndpoints();
       const socket = new WebSocket(wsUrl);
       this.ws = socket;
 
       socket.onopen = () => {
         if (this.ws !== socket) return;
         this.isConnected = true;
+        this.reconnectAttempts = 0;
         this.startPingLoop();
 
         socket.send(
@@ -256,7 +296,10 @@ export class MultiplayerClient {
           this.stopPingLoop();
           this.emit('disconnected', {});
 
-          // Auto-reconnect after 3 seconds
+          // Auto-reconnect with exponential backoff (1s, 2s, 4s, 8s max)
+          const delay = Math.min(8000, 1000 * Math.pow(2, this.reconnectAttempts));
+          this.reconnectAttempts++;
+
           this.reconnectTimeout = window.setTimeout(() => {
             if (!this.isConnected) {
               this.connect(
@@ -266,7 +309,7 @@ export class MultiplayerClient {
                 this.currentColorIndex
               );
             }
-          }, 3000);
+          }, delay);
         }
       };
 
@@ -496,9 +539,9 @@ export class MultiplayerClient {
   }
 
   private handleServerMessage(msg: any) {
-    // 1. JOINED ROOM
-    if (msg.type === 'joined_room') {
-      this.myClientId = msg.myId;
+    // 1. JOINED ROOM / ROOM JOINED
+    if (msg.type === 'joined_room' || msg.type === 'room_joined') {
+      this.myClientId = msg.playerId || msg.myId;
       this.isHost = Boolean(msg.isHost);
       this.slotIndex = typeof msg.slotIndex === 'number' ? msg.slotIndex : 0;
       if (msg.room) {
@@ -516,6 +559,7 @@ export class MultiplayerClient {
         this.chatLog = uniqueMessages;
       }
       this.emit('joined_room', msg);
+      this.emit('room_joined', msg);
     }
 
     // 2. ROOM STATE SNAPSHOT (Syncs all players in the lobby and game)
@@ -536,13 +580,15 @@ export class MultiplayerClient {
     }
 
     // 4. MOTION SYNC PACKET FROM PEER
-    else if (msg.type === 'sync') {
-      if (!msg.fromId || msg.fromId === this.myClientId) return;
+    else if (msg.type === 'sync' || msg.type === 'player_sync') {
+      const peerId = msg.id || msg.fromId;
+      if (!peerId || peerId === this.myClientId) return;
 
-      const existing = this.remotePlayers.get(msg.fromId);
+      const existing = this.remotePlayers.get(peerId);
       if (existing) {
-        existing.x = msg.x;
-        existing.y = msg.y;
+        // LERP / Smooth Interpolation to eliminate jitter
+        existing.x = existing.x + (msg.x - existing.x) * 0.45;
+        existing.y = existing.y + (msg.y - existing.y) * 0.45;
         existing.vx = msg.vx;
         existing.vy = msg.vy;
         existing.facing = msg.facing;
@@ -561,8 +607,8 @@ export class MultiplayerClient {
         existing.slotIndex = msg.slotIndex ?? existing.slotIndex;
         existing.lastSeen = Date.now();
       } else {
-        this.remotePlayers.set(msg.fromId, {
-          id: msg.fromId,
+        this.remotePlayers.set(peerId, {
+          id: peerId,
           name: msg.name || 'Andarilho',
           character: msg.character || 'Nox',
           slotIndex: msg.slotIndex || 1,
@@ -587,7 +633,7 @@ export class MultiplayerClient {
       }
 
       // Also update in roomPlayers array
-      const rpInfo = this.roomPlayers.find((p) => p.id === msg.fromId);
+      const rpInfo = this.roomPlayers.find((p: any) => (p.id === peerId || p.playerId === peerId));
       if (rpInfo) {
         rpInfo.currentRoomId = msg.currentRoomId;
         rpInfo.hp = msg.hp;
@@ -599,8 +645,9 @@ export class MultiplayerClient {
 
     // 5. ATTACK EVENT
     else if (msg.type === 'player_attack') {
-      if (msg.fromId && msg.fromId !== this.myClientId) {
-        const rp = this.remotePlayers.get(msg.fromId);
+      const peerId = msg.id || msg.fromId;
+      if (peerId && peerId !== this.myClientId) {
+        const rp = this.remotePlayers.get(peerId);
         if (rp) {
           rp.isAttacking = true;
           rp.attackDirection = msg.direction || 'side';
@@ -611,10 +658,11 @@ export class MultiplayerClient {
 
     // 6. REVIVE EVENT
     else if (msg.type === 'player_revived') {
-      if (msg.targetId === this.myClientId) {
+      const targetId = msg.targetPlayerId || msg.targetId;
+      if (targetId === this.myClientId) {
         this.emit('self_revived', msg);
       } else {
-        const rp = this.remotePlayers.get(msg.targetId);
+        const rp = this.remotePlayers.get(targetId);
         if (rp) {
           rp.isDowned = false;
           rp.hp = msg.hp || 3;
@@ -638,7 +686,7 @@ export class MultiplayerClient {
       }
       this.emit('chat_message', msg.message);
     } else if (msg.type === 'emote') {
-      const p = this.remotePlayers.get(msg.fromId);
+      const p = this.remotePlayers.get(msg.id || msg.fromId);
       if (p) {
         p.lastEmote = { text: msg.text, timer: 4.0 };
       }
@@ -669,9 +717,9 @@ export class MultiplayerClient {
     }
 
     // 11. PLAYER LEFT
-    else if (msg.type === 'player_leave') {
+    else if (msg.type === 'player_leave' || msg.type === 'player_left') {
       this.remotePlayers.delete(msg.id);
-      this.roomPlayers = this.roomPlayers.filter((p) => p.id !== msg.id);
+      this.roomPlayers = this.roomPlayers.filter((p: any) => (p.id !== msg.id && p.playerId !== msg.id));
       if (msg.newHostId === this.myClientId) {
         this.isHost = true;
       }
@@ -698,38 +746,43 @@ export class MultiplayerClient {
     // Synchronize remotePlayers collection with room membership
     const activeRemoteIds = new Set<string>();
 
-    for (const p of this.roomPlayers) {
-      if (p.id !== this.myClientId) {
-        activeRemoteIds.add(p.id);
-        const existing = this.remotePlayers.get(p.id);
+    for (const p of this.roomPlayers as any[]) {
+      const pId = p.id || p.playerId;
+      const pName = p.name || p.displayName || 'Andarilho';
+      const pChar = p.character || p.characterId || 'Nox';
+
+      if (pId !== this.myClientId) {
+        activeRemoteIds.add(pId);
+        const existing = this.remotePlayers.get(pId);
         if (existing) {
-          existing.name = p.name;
-          existing.character = p.character;
+          existing.name = pName;
+          existing.character = pChar;
           existing.colorIndex = p.colorIndex;
           existing.slotIndex = p.slotIndex;
-          existing.isDowned = p.status === 'downed';
+          existing.isDowned = p.status === 'downed' || Boolean(p.isDowned);
           if (p.currentRoomId) existing.currentRoomId = p.currentRoomId;
         } else {
           // Initialize remote player in memory so they are instantly visible in menus
-          this.remotePlayers.set(p.id, {
-            id: p.id,
-            name: p.name,
-            character: p.character,
+          this.remotePlayers.set(pId, {
+            id: pId,
+            name: pName,
+            character: pChar,
             slotIndex: p.slotIndex,
-            x: p.x ?? 200 + p.slotIndex * 42,
+            x: p.x ?? 200 + (p.slotIndex || 0) * 42,
             y: p.y ?? 520,
             vx: p.vx ?? 0,
             vy: p.vy ?? 0,
             facing: p.facing ?? 'right',
-            hp: p.hp ?? 5,
-            maxHp: p.maxHp ?? 5,
-            maskCracks: 0,
+            hp: p.hp ?? p.health ?? 5,
+            maxHp: p.maxHp ?? p.maxHealth ?? 5,
+            maskCracks: p.maskCracks ?? 0,
             currentRoomId: p.currentRoomId || 'room_lumen_haven',
-            currentAnimation: 'idle',
+            currentAnimation: p.currentAnimation || 'idle',
+            animationStyle: p.animationStyle || 'padrao',
             isAttacking: false,
             attackDirection: 'side',
             isDashing: false,
-            isDowned: p.status === 'downed',
+            isDowned: p.status === 'downed' || Boolean(p.isDowned),
             colorIndex: p.colorIndex,
             lastSeen: Date.now(),
           });
